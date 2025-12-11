@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard de Seguimiento - Tesina</title>
+  
+  <link rel="icon" type="image/png" href="imagen/dash_ico.png"/> 
+  
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <div class="container">
+    <header class="dashboard-header">
+      <h1><i class="fas fa-chart-line"></i> Dashboard de Seguimiento</h1>
+      <div class="last-update">Última actualización: <span id="last-update-time">--:--</span></div>
+    </header>
+
+    <div class="ingestion-control">
+      <label for="csv-file-input">
+        <i class="fas fa-file-upload"></i> Cargar nuevo CSV de Tareas:
+      </label>
+
+      <div id="file-upload-wrapper">
+        <input type="file" id="csv-file-input" accept=".csv" name="file-upload" />
+        <span class="custom-file-button">Seleccionar archivo</span>
+        <span class="file-name-display">Sin archivos seleccionados</span>
+      </div>
+
+      <button id="ingest-csv-btn" class="btn-primary">
+        <i class="fas fa-upload"></i> Cargar y Sobrescribir
+      </button>
+
+      <div id="ingestion-status"></div>
+    </div>
+
+    <div class="controls">
+      <button id="refresh-dashboard" class="btn-secondary">
+        <i class="fas fa-sync-alt"></i> Actualizar Dashboard
+      </button>
+
+      <div class="api-status">
+        <span id="api-status-indicator" class="status-offline" aria-hidden="true"></span>
+        <span id="api-status-text">API Status</span>
+      </div>
+    </div>
+    
+    <div class="dashboard-grid">
+      
+      <div class="card">
+        <h2><i class="fas fa-tachometer-alt"></i> Métricas Clave</h2>
+        <div id="metrics-summary" class="metrics-container">
+          <div class="metric-box">Total Tareas: <span id="total-tasks">--</span></div>
+          <div class="metric-box">Tareas Completadas: <span id="completed-tasks">--</span></div>
+          <div class="metric-box">Tasa de Completitud: <span id="completion-rate">--%</span></div>
+          <div class="metric-box">T. Promedio de Cierre: <span id="avg-completion-time">--</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><i class="fas fa-project-diagram"></i> Estado del Proyecto</h2>
+        <div id="project-status-chart" class="chart-container"></div>
+      </div>
+      
+      <div class="card">
+        <h2><i class="fas fa-exclamation-triangle"></i> Tareas Vencidas</h2>
+        <div id="overdue-tasks" class="list-container"></div>
+      </div>
+
+      <div class="card">
+        <h2><i class="fas fa-calendar-day"></i> Tareas Próximas</h2>
+        <div id="daily-tasks" class="list-container"></div>
+      </div>
+      
+      <div class="card span-full">
+        <h2><i class="fas fa-users"></i> Carga de Trabajo por Recurso</h2>
+        <div id="workload-chart" class="chart-container-wide"></div>
+      </div>
+
+      <div class="card span-full">
+        <div class="gantt-header">
+          <h2><i class="fas fa-calendar-alt"></i> Diagrama de Gantt</h2>
+          <div class="gantt-controls">
+            <div class="filter-group">
+              <label for="status-filter">Estado:</label>
+              <select id="status-filter" class="filter-select">
+                <option value="">Todos los estados</option>
+                <option value="TO_DO">TO DO</option>
+                <option value="IN_PROGRESS">EN PROGRESO</option>
+                <option value="COMPLETED">COMPLETADO</option>
+                <option value="BLOCKED">BLOQUEADO</option>
+              </select>
+            </div>
+            
+            <div class="filter-group">
+              <label for="user-filter">Usuario:</label>
+              <select id="user-filter" class="filter-select">
+                <option value="">Todos los usuarios</option>
+                </select>
+            </div>
+            
+            <button id="reset-gantt-filters" class="action-button btn-secondary" onclick="resetFiltersAndRefresh()">
+              <i class="fas fa-undo"></i> Limpiar Filtros
+            </button>
+            
+            <div class="view-controls">
+              <label>Zoom:</label>
+              <button type="button" class="btn-view gantt-zoom-btn gantt-zoom-active" data-zoom="days" onclick="zoomGantt('days')" aria-pressed="true">Días</button>
+              <button type="button" class="btn-view gantt-zoom-btn" data-zoom="weeks" onclick="zoomGantt('weeks')" aria-pressed="false">Semanas</button>
+              <button type="button" class="btn-view gantt-zoom-btn" data-zoom="months" onclick="zoomGantt('months')" aria-pressed="false">Meses</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="gantt-container">
+          <div id="gantt-chart" class="chart-container-wide"></div>
+          <div id="gantt-legend-container" class="gantt-legend"></div>
+        </div>
+      </div>
+      
+    </div> 
+  </div>
+
+  <script src="dashboard.js"></script>
+  <script>
+    (function () {
+      // Refresh
+      const refreshBtn = document.getElementById('refresh-dashboard');
+      if (refreshBtn) refreshBtn.addEventListener('click', () => { if (typeof loadAllData === 'function') loadAllData(); });
+
+      // Gantt Zoom Toggle - Aseguramos la llamada a zoomGantt y el estado activo/inactivo
+      document.querySelectorAll('.gantt-zoom-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          // La función zoomGantt(level) en dashboard.js ya maneja el estado activo
+          // Solo necesitamos asegurarnos de que la llamada al zoom esté en el HTML (ya lo está, pero lo reconfirmo)
+          document.querySelectorAll('.gantt-zoom-btn').forEach(b => { 
+            b.classList.remove('gantt-zoom-active'); 
+            b.setAttribute('aria-pressed', 'false'); 
+          });
+          btn.classList.add('gantt-zoom-active');
+          btn.setAttribute('aria-pressed', 'true');
+        });
+      });
+
+      // File Input Customizado
+      const fileInput = document.getElementById('csv-file-input');
+      const customBtn = document.querySelector('.custom-file-button');
+      const fileNameDisplay = document.querySelector('.file-name-display');
+      if (customBtn && fileInput) {
+        customBtn.addEventListener('click', (e) => { e.preventDefault(); fileInput.click(); });
+        fileInput.addEventListener('change', () => {
+          fileNameDisplay.textContent = fileInput.files.length ? fileInput.files[0].name : 'Sin archivos seleccionados';
+        });
+      }
+      
+    })();
+  </script>
+</body>
+</html>
