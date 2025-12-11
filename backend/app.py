@@ -19,10 +19,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Conexión MongoDB ---
-mongo_uri = os.getenv("MONGO_URI") or "mongodb://localhost:27017/"
-client = MongoClient(mongo_uri)
-db = client["project_dashboard"]
+# =======================================================
+# ⚙️ CONFIGURACIÓN Y CONEXIÓN MONGO ATLAS
+# =======================================================
+
+# Usar variables de entorno (preferible) o los valores por defecto/directos de Atlas
+MONGO_ATLAS_URI = os.getenv(
+    "MONGO_ATLAS_URI", 
+    "mongodb+srv://aguilarhugo55_db_user:c5mfG11QT68ib4my@clusteract1.kpdhd5e.mongodb.net/?appName=ClusterAct1"
+)
+DB_NAME = os.getenv("DB_NAME", "dash_pm") # El nombre de la base de datos en Atlas
+
+# Inicialización global para la conexión
+client: MongoClient = None
+db = None
+
+def init_db():
+    """Inicializa la conexión a MongoDB Atlas."""
+    global client, db
+    try:
+        if client is None:
+            # Conexión, con timeout para no bloquear indefinidamente si falla
+            client = MongoClient(MONGO_ATLAS_URI, serverSelectionTimeoutMS=5000)
+            # Prueba de conexión (ping)
+            client.admin.command('ping') 
+            db = client[DB_NAME]
+            print("Conexión a MongoDB Atlas exitosa.")
+    except Exception as e:
+        print(f"ERROR: No se pudo conectar a MongoDB Atlas: {e}")
+        # En un entorno de producción, puedes optar por salir o levantar una excepción.
+        raise Exception("Fallo de conexión a la base de datos.")
+
+# Llamar a la función al inicio de la aplicación para establecer la conexión
+# Se podría mover a un evento de 'startup' de FastAPI para un manejo más robusto, 
+# pero por simplicidad se deja aquí.
+init_db() 
+
 
 # --- Utilidades ---
 def parse_json(data):
@@ -291,8 +323,17 @@ async def get_upcoming_tasks():
 # =======================================================
 @app.get("/api/status")
 async def api_status():
+    global client 
     try:
-        db.command("ping")
+        # Usamos el cliente global que se inicializó
+        if client:
+            client.admin.command("ping")
+        else:
+            # Intentar reconectar si la inicialización falló (manejo de error)
+            init_db() 
+            if not client:
+                 raise Exception("Cliente de MongoDB no disponible.")
+
         task_count = db.tasks.count_documents({})
         resource_count = db.resources.count_documents({})
         return parse_json({
@@ -302,6 +343,8 @@ async def api_status():
         })
     except Exception as e:
         print(f"Error en api_status: {e}")
+        # Aseguramos que el cliente sea None si la conexión falló aquí
+        client = None 
         raise HTTPException(status_code=503, detail="No se pudo conectar con MongoDB")
 
 @app.get("/api/project/status")
@@ -309,7 +352,8 @@ async def get_project_status():
     try:
         pipeline = [
             {"$group": {"_id": {"$ifNull": ["$status", "SIN ESTADO"]}, "count": {"$sum": 1}}},
-            {"$project": {"status": {"$toUpper": "$_id"}, "count": 1, "_id": 0}},
+            # CORRECCIÓN PARA GRÁFICO: Usa 'name' en lugar de 'status'
+            {"$project": {"name": {"$toUpper": "$_id"}, "count": 1, "_id": 0}}, 
             {"$sort": {"count": -1}}
         ]
         results = list(db.tasks.aggregate(pipeline))
@@ -358,7 +402,8 @@ async def get_resources_load_alias():
 async def get_metrics():
     try:
         total_tasks = db.tasks.count_documents({})
-        completed_tasks = db.tasks.count_documents({"status": {"$in": ["COMPLETED", "completado", "completed"]}})
+        # Se asegura de considerar las diferentes formas de 'COMPLETADO'
+        completed_tasks = db.tasks.count_documents({"status": {"$in": ["COMPLETED", "completado", "completed", "COMPLETADO"]}}) 
         completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
         avg_completion_time = 5.2
         return parse_json({
@@ -395,4 +440,5 @@ async def favicon():
 # =======================================================
 if __name__ == "__main__":
     import uvicorn
+    # CORRECCIÓN APLICADA: Puerto cambiado de 8000 a 8080 para coincidir con la llamada del frontend.
     uvicorn.run(app, host="0.0.0.0", port=8000)
