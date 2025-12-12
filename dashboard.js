@@ -1,4 +1,4 @@
-// dashboard.js - VERSIÓN CORREGIDA Y FUNCIONAL COMPLETA
+// dashboard.js - VERSIÓN FINAL COMPLETA Y CORREGIDA
 
 // Configuración global
 const API_BASE_URL = 'https://pm-dashb-7.onrender.com';
@@ -15,7 +15,7 @@ const statusColors = {
   'CANCELLED': '#0B0D0C'  // Gris (Neutro)
 };
 
-// Helpers robustos para el Donut/Pie Chart - VERSIÓN CORREGIDA
+// Helpers robustos para el Donut/Pie Chart
 const getPieStatus = (d) => {
   const status = String(d.data._id || d.data.status || d.data.name || 'TO_DO').toUpperCase();
   return status.includes('TO_DO') ? 'TO_DO' :
@@ -141,9 +141,6 @@ async function handleIngestCsv() {
 }
 
 // =======================================================
-// 2. ESTADO DEL PROYECTO (Donut Chart) - VERSIÓN CORREGIDA
-// =======================================================
-// =======================================================
 // 2. ESTADO DEL PROYECTO (Donut Chart) - VERSIÓN CORREGIDA DEFINITIVA
 // =======================================================
 async function renderProjectStatus() {
@@ -155,7 +152,7 @@ async function renderProjectStatus() {
     const data = responseData.projects || [];
 
     const container = d3.select('#project-status-chart');
-    container.html(''); // Limpiar completamente
+    container.html('');
 
     if (!Array.isArray(data) || data.length === 0) {
       container.append('div')
@@ -169,7 +166,7 @@ async function renderProjectStatus() {
       return;
     }
 
-    // 1. Consolidar datos (agrupar por estado, ignorando proyecto)
+    // Consolidar datos (agrupar por estado, ignorando proyecto)
     const statusMap = new Map();
     
     data.forEach(project => {
@@ -216,16 +213,15 @@ async function renderProjectStatus() {
       return;
     }
 
-    // 2. Configurar dimensiones dinámicas
+    // Configurar dimensiones dinámicas
     const containerElement = document.getElementById('project-status-chart');
     const containerWidth = containerElement?.clientWidth || 400;
     const containerHeight = Math.max(containerElement?.clientHeight || 0, 350);
     
-    // Usar dimensiones más pequeñas para mejor visualización
     const width = Math.min(containerWidth, 500);
     const height = Math.min(containerHeight, 350);
-    const radius = Math.min(width, height) / 2 - 50; // Más espacio para leyenda
-    const innerRadius = radius * 0.5; // Donut chart
+    const radius = Math.min(width, height) / 2 - 50;
+    const innerRadius = radius * 0.5;
 
     console.log('📏 renderProjectStatus: Dimensiones:', {
       containerWidth,
@@ -236,7 +232,7 @@ async function renderProjectStatus() {
       innerRadius
     });
 
-    // 3. Crear SVG (asegurar que sea visible)
+    // Crear SVG
     const svg = container.append('svg')
       .attr('width', width)
       .attr('height', height)
@@ -247,7 +243,7 @@ async function renderProjectStatus() {
     const g = svg.append('g')
       .attr('transform', `translate(${width / 2}, ${height / 2})`);
 
-    // 4. Definir colores mejorados (más contraste)
+    // Definir colores mejorados (más contraste)
     const colorPalette = {
       'TO_DO': '#FF6B6B',      // Rojo coral
       'IN_PROGRESS': '#4ECDC4', // Turquesa
@@ -260,7 +256,7 @@ async function renderProjectStatus() {
       .domain(pieData.map(d => d.status))
       .range(pieData.map(d => colorPalette[d.status] || '#CCCCCC'));
 
-    // 5. Crear gráfica de donut
+    // Crear gráfica de donut
     const pie = d3.pie()
       .value(d => d.count)
       .sort(null);
@@ -275,7 +271,7 @@ async function renderProjectStatus() {
       .attr('class', 'arc')
       .style('cursor', 'pointer');
 
-    // 6. Dibujar segmentos con mejor contraste
+    // Dibujar segmentos con mejor contraste
     arcs.append('path')
       .attr('d', arc)
       .attr('fill', d => color(d.data.status))
@@ -337,7 +333,7 @@ async function renderProjectStatus() {
         }
       });
 
-    // 7. Agregar porcentajes dentro de los segmentos
+    // Agregar porcentajes dentro de los segmentos
     arcs.append('text')
       .attr('transform', d => `translate(${arc.centroid(d)})`)
       .attr('dy', '0.35em')
@@ -357,7 +353,7 @@ async function renderProjectStatus() {
       .style('font-weight', 'bold')
       .style('pointer-events', 'none');
 
-    // 8. Leyenda a la derecha (si hay espacio)
+    // Leyenda a la derecha (si hay espacio)
     if (width > 400) {
       const legend = svg.append('g')
         .attr('class', 'legend')
@@ -399,7 +395,7 @@ async function renderProjectStatus() {
         .style('fill', '#333');
     }
 
-    // 9. Título
+    // Título
     svg.append('text')
       .attr('x', width / 2)
       .attr('y', 25)
@@ -410,7 +406,7 @@ async function renderProjectStatus() {
       .style('fill', '#333')
       .style('font-family', 'Arial, sans-serif');
 
-    // 10. Total en el centro
+    // Total en el centro
     g.append('text')
       .attr('text-anchor', 'middle')
       .attr('dy', '-0.8em')
@@ -431,15 +427,6 @@ async function renderProjectStatus() {
 
     console.log('✅ renderProjectStatus: Gráfica renderizada exitosamente');
     
-    // Forzar redibujado si es necesario
-    setTimeout(() => {
-      if (containerElement) {
-        containerElement.style.display = 'none';
-        containerElement.offsetHeight; // Trigger reflow
-        containerElement.style.display = '';
-      }
-    }, 50);
-
   } catch (error) {
     console.error('❌ Error en renderProjectStatus:', error);
     d3.select('#project-status-chart').html(`
@@ -460,72 +447,48 @@ async function renderProjectStatus() {
   }
 }
 
-// Función auxiliar para obtener color - MANTENER esta función
-function getColorForStatus(status) {
-  const statusUpper = String(status || '').toUpperCase();
-  return statusColors[statusUpper] || 
-         statusColors[statusUpper.replace(' ', '_')] || 
-         '#cccccc';
-}
-
-// Función auxiliar para etiqueta - MANTENER esta función
-function getLabelForStatus(status) {
-  const statusStr = String(status || 'Indefinido');
-  return statusStr
-    .replace('_', ' ')
-    .replace('TO_DO', 'Por Hacer')
-    .replace('IN_PROGRESS', 'En Progreso')
-    .replace('COMPLETED', 'Completado')
-    .replace('BLOCKED', 'Bloqueado')
-    .replace('CANCELLED', 'Cancelado');
-}
-
-// Función renderLegend actualizada - ELIMINAR la vieja y mantener solo esta si es necesaria
-function renderLegend(svg, data, totalTasks, outerRadius) {
-  const legendOffset = outerRadius + 50;
-  const legendSpacing = 20;
-
-  // Agrupar por estado para la leyenda (ignorando proyecto)
-  const statusCounts = {};
-  data.forEach(d => {
-    const status = d.status || d._id;
-    if (!statusCounts[status]) statusCounts[status] = 0;
-    statusCounts[status] += d.count;
-  });
-
-  const legendData = Object.keys(statusCounts).map(status => ({
-    _id: status,
-    count: statusCounts[status]
+function renderWorkloadLegend(container) {
+  const relevantStatuses = {
+    'TO_DO': statusColors['TO_DO'],
+    'IN_PROGRESS': statusColors['IN_PROGRESS'],
+    'BLOCKED': statusColors['BLOCKED'],
+  };
+  
+  const legendData = Object.entries(relevantStatuses).map(([status, color]) => ({
+    status: String(status).replace('_', ' '),
+    color: color
   }));
 
-  // Ordenar por cantidad descendente
-  legendData.sort((a, b) => b.count - a.count);
-
-  const legend = svg.selectAll(".legend")
-    .data(legendData)
-    .enter().append("g")
-    .attr("class", "legend")
-    .attr("transform", (d, i) => `translate(${legendOffset}, ${i * legendSpacing - (legendData.length * legendSpacing) / 2 + 10})`);
-
-  legend.append("rect")
-    .attr("x", 0)
-    .attr("width", 10)
-    .attr("height", 10)
-    .attr('fill', d => getColorForStatus(d._id));
-
-  legend.append("text")
-    .attr("x", 15)
-    .attr("y", 9)
-    .attr("dy", ".35em")
-    .style("text-anchor", "start")
-    .style("font-size", "11px")
-    .style("font-weight", "bold")
-    .text(d => {
-      const label = getLabelForStatus(d._id);
-      const percentage = totalTasks > 0 ? ((d.count / totalTasks) * 100).toFixed(1) : 0;
-      return `${label} (${d.count} - ${percentage}%)`;
-    });
+  container.select('.workload-legend-container').remove();
+  
+  const legendDiv = container.append('div')
+      .attr('class', 'workload-legend-container')
+      .style('display', 'flex')
+      .style('gap', '20px')
+      .style('padding-top', '15px')
+      .style('margin-top', '10px')
+      .style('flex-wrap', 'wrap')
+      .style('justify-content', 'center'); 
+      
+  legendData.forEach(d => {
+    const item = legendDiv.append('div')
+      .style('display', 'flex')
+      .style('align-items', 'center')
+      .style('gap', '5px')
+      .style('font-size', '12px')
+      .style('color', '#444');
+      
+    item.append('span')
+      .style('width', '12px')
+      .style('height', '12px')
+      .style('border-radius', '3px')
+      .style('background-color', d.color);
+      
+    item.append('span')
+      .text(d.status);
+  });
 }
+
 // =======================================================
 // 3. CARGA DE TRABAJO (Bar Chart) - CORREGIDO
 // =======================================================
