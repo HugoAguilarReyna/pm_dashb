@@ -104,15 +104,12 @@ async function handleIngestCsv() {
 }
 
 // =======================================================
-// 2. ESTADO DEL PROYECTO (Donut Chart) - CORREGIDO
+// 2. ESTADO DEL PROYECTO (Donut Chart) - INTERACTIVO - CORREGIDO
 // =======================================================
 async function renderProjectStatus() {
   try {
     const response = await fetch(`${API_BASE_URL}/api/project/status`);
-    const responseData = await response.json();
-    
-    // CORRECCIÓN: Extraer array 'projects' del objeto
-    const data = responseData.projects || [];
+    const data = await response.json();
 
     const container = d3.select('#project-status-chart');
     container.html('');
@@ -123,7 +120,7 @@ async function renderProjectStatus() {
       return;
     }
 
-    const totalTasks = data.reduce((sum, d) => sum + (Number(d.total_tasks) || 0), 0);
+    const totalTasks = data.reduce((sum, d) => sum + (Number(d.count) || 0), 0);
     const width = 450, height = 300, outerRadius = 120, innerRadius = outerRadius * 0.6;
 
     const svg = container.append('svg')
@@ -132,40 +129,21 @@ async function renderProjectStatus() {
       .append('g')
       .attr('transform', `translate(${outerRadius + 20}, ${height / 2})`);
 
-    // Preparar datos para el gráfico de donut
-    const pieData = [];
-    data.forEach(project => {
-      if (project.statuses && Array.isArray(project.statuses)) {
-        project.statuses.forEach(status => {
-          pieData.push({
-            _id: `${project.project} - ${status.status}`,
-            status: status.status,
-            count: status.count,
-            name: status.status
-          });
-        });
-      }
-    });
-
-    if (pieData.length === 0) {
-      container.append('div').attr('class', 'no-data-message')
-        .text('No hay datos de estados para mostrar.');
-      return;
-    }
-
     const pie = d3.pie().value(d => d.count).sort(null);
     const arc = d3.arc().innerRadius(innerRadius).outerRadius(outerRadius);
 
     const arcs = svg.selectAll('.arc')
-      .data(pie(pieData))
+      .data(pie(data))
       .enter().append('g')
       .attr('class', 'arc');
 
     arcs.append('path')
       .attr('d', arc)
+      // CORRECCIÓN: Usamos getPieStatus
       .attr('fill', d => statusColors[getPieStatus(d)] || '#cccccc')
       .style('cursor', 'pointer')
       .on('click', function (event, d) {
+        // CORRECCIÓN: Usamos getPieStatus
         const status = getPieStatus(d);
         const filterElement = document.getElementById('status-filter');
         const userFilterElement = document.getElementById('user-filter'); 
@@ -184,6 +162,7 @@ async function renderProjectStatus() {
       .on('mouseover', function (event, d) {
         d3.select('#tooltip')
           .style('opacity', 1)
+          // CORRECCIÓN: Usamos getPieLabel
           .html(`<strong>${getPieLabel(d)}</strong>: ${d.data.count} tareas (${d3.format(".1%")(d.data.count / Math.max(1, totalTasks))})`)
           .style('left', (event.pageX + 10) + 'px')
           .style('top', (event.pageY - 28) + 'px');
@@ -200,7 +179,7 @@ async function renderProjectStatus() {
       .style('fill', 'white')
       .style('font-size', '12px');
 
-    renderLegend(svg, pieData, totalTasks, outerRadius);
+    renderLegend(svg, data, totalTasks, outerRadius);
   } catch (error) {
     console.error("Error al renderizar el estado del proyecto:", error);
     d3.select('#project-status-chart').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
@@ -211,18 +190,8 @@ function renderLegend(svg, data, totalTasks, outerRadius) {
   const legendOffset = outerRadius + 50;
   const legendSpacing = 20;
 
-  // Agrupar por estado para la leyenda
-  const statusCounts = {};
-  data.forEach(d => {
-    const status = d.status || d._id;
-    if (!statusCounts[status]) statusCounts[status] = 0;
-    statusCounts[status] += d.count;
-  });
-
-  const legendData = Object.keys(statusCounts).map(status => ({
-    _id: status,
-    count: statusCounts[status]
-  }));
+  // Hacemos el mapeo de datos más robusto para la leyenda
+  const legendData = data.map(d => ({ _id: d._id || d.status || d.name, count: d.count }));
 
   const legend = svg.selectAll(".legend")
     .data(legendData)
