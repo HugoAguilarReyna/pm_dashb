@@ -143,143 +143,344 @@ async function handleIngestCsv() {
 // =======================================================
 // 2. ESTADO DEL PROYECTO (Donut Chart) - VERSIÓN CORREGIDA
 // =======================================================
+// =======================================================
+// 2. ESTADO DEL PROYECTO (Donut Chart) - VERSIÓN CORREGIDA DEFINITIVA
+// =======================================================
 async function renderProjectStatus() {
   try {
+    console.log('🎯 renderProjectStatus: Iniciando...');
+    
     const response = await fetch(`${API_BASE_URL}/api/project/status`);
     const responseData = await response.json();
-    
     const data = responseData.projects || [];
 
     const container = d3.select('#project-status-chart');
-    container.html('');
+    container.html(''); // Limpiar completamente
 
     if (!Array.isArray(data) || data.length === 0) {
-      container.append('div').attr('class', 'no-data-message')
+      container.append('div')
+        .attr('class', 'no-data-message')
+        .style('padding', '40px')
+        .style('text-align', 'center')
+        .style('color', '#666')
+        .style('font-style', 'italic')
         .text('No hay datos de proyectos disponibles.');
+      console.log('⚠️ renderProjectStatus: No hay datos de proyectos');
       return;
     }
 
-    // Preparar datos para el gráfico de donut - VERSIÓN CORREGIDA
-    const pieData = [];
-    let totalTasks = 0;
+    // 1. Consolidar datos (agrupar por estado, ignorando proyecto)
+    const statusMap = new Map();
     
     data.forEach(project => {
-      // Verificar que el proyecto tenga statuses y sea un array válido
-      if (project && project.statuses && Array.isArray(project.statuses)) {
+      if (project?.statuses?.length) {
         project.statuses.forEach(statusItem => {
-          // Verificar que cada item de status tenga las propiedades necesarias
-          if (statusItem && typeof statusItem === 'object') {
-            const status = String(statusItem.status || '').toUpperCase();
-            const count = Number(statusItem.count || statusItem.value || 0);
+          if (statusItem?.status && statusItem.count > 0) {
+            const status = statusItem.status.toUpperCase();
+            const count = Number(statusItem.count);
             
-            if (status && count > 0) {
-              pieData.push({
-                _id: `${project.project || project._id || 'Proyecto'} - ${status}`,
+            if (!statusMap.has(status)) {
+              statusMap.set(status, {
                 status: status,
-                count: count,
-                name: status.replace('_', ' '),
-                project: project.project || project._id || 'Proyecto'
+                count: 0,
+                label: status.replace('_', ' ')
               });
-              
-              totalTasks += count;
             }
+            statusMap.get(status).count += count;
           }
         });
       }
     });
 
+    // Convertir a array y ordenar por cantidad
+    const pieData = Array.from(statusMap.values())
+      .sort((a, b) => b.count - a.count);
+    
+    const totalTasks = pieData.reduce((sum, d) => sum + d.count, 0);
+
+    console.log('📊 renderProjectStatus: Datos procesados:', {
+      items: pieData.length,
+      totalTasks: totalTasks,
+      datos: pieData
+    });
+
     if (pieData.length === 0) {
-      container.append('div').attr('class', 'no-data-message')
+      container.append('div')
+        .attr('class', 'no-data-message')
+        .style('padding', '40px')
+        .style('text-align', 'center')
+        .style('color', '#666')
+        .style('font-style', 'italic')
         .text('No hay datos de estados para mostrar.');
+      console.log('⚠️ renderProjectStatus: No hay datos válidos para gráfico');
       return;
     }
 
-    const width = 450, height = 300, outerRadius = 120, innerRadius = outerRadius * 0.6;
+    // 2. Configurar dimensiones dinámicas
+    const containerElement = document.getElementById('project-status-chart');
+    const containerWidth = containerElement?.clientWidth || 400;
+    const containerHeight = Math.max(containerElement?.clientHeight || 0, 350);
+    
+    // Usar dimensiones más pequeñas para mejor visualización
+    const width = Math.min(containerWidth, 500);
+    const height = Math.min(containerHeight, 350);
+    const radius = Math.min(width, height) / 2 - 50; // Más espacio para leyenda
+    const innerRadius = radius * 0.5; // Donut chart
 
+    console.log('📏 renderProjectStatus: Dimensiones:', {
+      containerWidth,
+      containerHeight,
+      width,
+      height,
+      radius,
+      innerRadius
+    });
+
+    // 3. Crear SVG (asegurar que sea visible)
     const svg = container.append('svg')
       .attr('width', width)
       .attr('height', height)
-      .append('g')
-      .attr('transform', `translate(${outerRadius + 20}, ${height / 2})`);
+      .style('display', 'block')
+      .style('margin', '0 auto')
+      .style('overflow', 'visible');
 
+    const g = svg.append('g')
+      .attr('transform', `translate(${width / 2}, ${height / 2})`);
+
+    // 4. Definir colores mejorados (más contraste)
+    const colorPalette = {
+      'TO_DO': '#FF6B6B',      // Rojo coral
+      'IN_PROGRESS': '#4ECDC4', // Turquesa
+      'COMPLETED': '#06D6A0',   // Verde esmeralda
+      'BLOCKED': '#FFD166',     // Amarillo mostaza
+      'CANCELLED': '#6C757D'    // Gris
+    };
+
+    const color = d3.scaleOrdinal()
+      .domain(pieData.map(d => d.status))
+      .range(pieData.map(d => colorPalette[d.status] || '#CCCCCC'));
+
+    // 5. Crear gráfica de donut
     const pie = d3.pie()
       .value(d => d.count)
       .sort(null);
 
     const arc = d3.arc()
       .innerRadius(innerRadius)
-      .outerRadius(outerRadius);
+      .outerRadius(radius);
 
-    const arcs = svg.selectAll('.arc')
+    const arcs = g.selectAll('.arc')
       .data(pie(pieData))
       .enter().append('g')
-      .attr('class', 'arc');
+      .attr('class', 'arc')
+      .style('cursor', 'pointer');
 
+    // 6. Dibujar segmentos con mejor contraste
     arcs.append('path')
       .attr('d', arc)
-      .attr('fill', d => getColorForStatus(d.data.status))
-      .style('cursor', 'pointer')
-      .on('click', function (event, d) {
-        const status = d.data.status;
-        const filterElement = document.getElementById('status-filter');
-        const userFilterElement = document.getElementById('user-filter'); 
+      .attr('fill', d => color(d.data.status))
+      .style('stroke', '#fff')
+      .style('stroke-width', '2px')
+      .style('transition', 'opacity 0.3s, transform 0.3s')
+      .on('mouseover', function(event, d) {
+        d3.select(this)
+          .style('opacity', 0.8)
+          .style('transform', 'scale(1.05)');
 
-        if (filterElement) {
-          if (filterElement.value === status) {
-              resetFiltersAndRefresh();
-              return;
-          }
-          filterElement.value = status;
-          if(userFilterElement) userFilterElement.value = '';
-          
-          renderGanttChart();
-        }
-      })
-      .on('mouseover', function (event, d) {
-        const percentage = totalTasks > 0 ? (d.data.count / totalTasks * 100).toFixed(1) : 0;
+        const percentage = ((d.data.count / totalTasks) * 100).toFixed(1);
         d3.select('#tooltip')
           .style('opacity', 1)
           .html(`
-            <strong>${getLabelForStatus(d.data.status)}</strong><br>
-            Proyecto: ${d.data.project}<br>
-            Tareas: ${d.data.count}<br>
-            Porcentaje: ${percentage}%
+            <div style="font-weight: bold; margin-bottom: 5px; color: ${color(d.data.status)}">
+              ${d.data.label}
+            </div>
+            <div style="font-size: 14px;">
+              <strong>${d.data.count}</strong> tareas<br>
+              <strong>${percentage}%</strong> del total
+            </div>
           `)
-          .style('left', (event.pageX + 10) + 'px')
-          .style('top', (event.pageY - 28) + 'px');
+          .style('left', (event.pageX + 15) + 'px')
+          .style('top', (event.pageY - 15) + 'px');
       })
-      .on('mouseout', function () {
+      .on('mouseout', function() {
+        d3.select(this)
+          .style('opacity', 1)
+          .style('transform', 'scale(1)');
         d3.select('#tooltip').style('opacity', 0);
+      })
+      .on('click', function(event, d) {
+        const status = d.data.status;
+        const filterElement = document.getElementById('status-filter');
+        const userFilterElement = document.getElementById('user-filter');
+
+        if (filterElement) {
+          const newValue = filterElement.value === status ? '' : status;
+          filterElement.value = newValue;
+          if (userFilterElement) userFilterElement.value = '';
+          
+          // Feedback visual
+          d3.selectAll('.arc path')
+            .style('opacity', 0.3);
+          
+          if (newValue) {
+            d3.select(this)
+              .style('opacity', 1)
+              .style('stroke-width', '3px')
+              .style('stroke', '#333');
+          } else {
+            d3.selectAll('.arc path')
+              .style('opacity', 1)
+              .style('stroke-width', '2px');
+          }
+          
+          renderGanttChart();
+        }
       });
 
-    // Solo mostrar texto si el segmento es lo suficientemente grande
+    // 7. Agregar porcentajes dentro de los segmentos
     arcs.append('text')
       .attr('transform', d => `translate(${arc.centroid(d)})`)
       .attr('dy', '0.35em')
+      .attr('text-anchor', 'middle')
       .text(d => {
-        const percentage = totalTasks > 0 ? (d.data.count / totalTasks * 100) : 0;
-        return percentage > 5 ? d3.format(".0%")(d.data.count / Math.max(1, totalTasks)) : '';
+        const percentage = (d.data.count / totalTasks * 100);
+        return percentage > 8 ? d3.format('.0%')(d.data.count / totalTasks) : '';
       })
-      .style('text-anchor', 'middle')
-      .style('fill', 'white')
+      .style('fill', d => {
+        // Determinar si el color es claro u oscuro para el texto
+        const colorValue = color(d.data.status);
+        const rgb = d3.rgb(colorValue);
+        const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+        return brightness > 125 ? '#000000' : '#FFFFFF';
+      })
       .style('font-size', '12px')
       .style('font-weight', 'bold')
       .style('pointer-events', 'none');
 
-    // Renderizar leyenda
-    renderLegend(svg, pieData, totalTasks, outerRadius);
+    // 8. Leyenda a la derecha (si hay espacio)
+    if (width > 400) {
+      const legend = svg.append('g')
+        .attr('class', 'legend')
+        .attr('transform', `translate(${width/2 + radius + 20}, ${height/2 - (pieData.length * 25)/2})`);
+
+      const legendItems = legend.selectAll('.legend-item')
+        .data(pieData)
+        .enter().append('g')
+        .attr('class', 'legend-item')
+        .attr('transform', (d, i) => `translate(0, ${i * 25})`)
+        .style('cursor', 'pointer')
+        .on('click', function(event, d) {
+          const status = d.status;
+          const filterElement = document.getElementById('status-filter');
+          
+          if (filterElement) {
+            filterElement.value = filterElement.value === status ? '' : status;
+            if (document.getElementById('user-filter')) {
+              document.getElementById('user-filter').value = '';
+            }
+            renderGanttChart();
+          }
+        });
+
+      legendItems.append('rect')
+        .attr('width', 16)
+        .attr('height', 16)
+        .attr('fill', d => color(d.status))
+        .style('rx', '3')
+        .style('ry', '3');
+
+      legendItems.append('text')
+        .attr('x', 22)
+        .attr('y', 11)
+        .attr('dy', '0.35em')
+        .text(d => `${d.label} (${d.count})`)
+        .style('font-size', '12px')
+        .style('font-family', 'Arial, sans-serif')
+        .style('fill', '#333');
+    }
+
+    // 9. Título
+    svg.append('text')
+      .attr('x', width / 2)
+      .attr('y', 25)
+      .attr('text-anchor', 'middle')
+      .text('Distribución de Tareas por Estado')
+      .style('font-size', '16px')
+      .style('font-weight', 'bold')
+      .style('fill', '#333')
+      .style('font-family', 'Arial, sans-serif');
+
+    // 10. Total en el centro
+    g.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '-0.8em')
+      .text('Total')
+      .style('font-size', '14px')
+      .style('fill', '#666')
+      .style('font-weight', '500')
+      .style('font-family', 'Arial, sans-serif');
+
+    g.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '0.8em')
+      .text(totalTasks)
+      .style('font-size', '24px')
+      .style('font-weight', 'bold')
+      .style('fill', '#333')
+      .style('font-family', 'Arial, sans-serif');
+
+    console.log('✅ renderProjectStatus: Gráfica renderizada exitosamente');
     
+    // Forzar redibujado si es necesario
+    setTimeout(() => {
+      if (containerElement) {
+        containerElement.style.display = 'none';
+        containerElement.offsetHeight; // Trigger reflow
+        containerElement.style.display = '';
+      }
+    }, 50);
+
   } catch (error) {
-    console.error("❌ Error al renderizar el estado del proyecto:", error);
+    console.error('❌ Error en renderProjectStatus:', error);
     d3.select('#project-status-chart').html(`
-      <div class="error-message">
-        <i class="fas fa-exclamation-triangle"></i>
-        Error cargando datos: ${error.message}
+      <div style="
+        padding: 30px;
+        text-align: center;
+        color: #dc3545;
+        background: #f8d7da;
+        border-radius: 4px;
+        border: 1px solid #f5c6cb;
+        margin: 20px;
+        font-family: Arial, sans-serif;
+      ">
+        <strong>Error cargando el gráfico:</strong><br>
+        ${error.message}
       </div>
     `);
   }
 }
 
+// Función auxiliar para obtener color - MANTENER esta función
+function getColorForStatus(status) {
+  const statusUpper = String(status || '').toUpperCase();
+  return statusColors[statusUpper] || 
+         statusColors[statusUpper.replace(' ', '_')] || 
+         '#cccccc';
+}
+
+// Función auxiliar para etiqueta - MANTENER esta función
+function getLabelForStatus(status) {
+  const statusStr = String(status || 'Indefinido');
+  return statusStr
+    .replace('_', ' ')
+    .replace('TO_DO', 'Por Hacer')
+    .replace('IN_PROGRESS', 'En Progreso')
+    .replace('COMPLETED', 'Completado')
+    .replace('BLOCKED', 'Bloqueado')
+    .replace('CANCELLED', 'Cancelado');
+}
+
+// Función renderLegend actualizada - ELIMINAR la vieja y mantener solo esta si es necesaria
 function renderLegend(svg, data, totalTasks, outerRadius) {
   const legendOffset = outerRadius + 50;
   const legendSpacing = 20;
@@ -325,49 +526,6 @@ function renderLegend(svg, data, totalTasks, outerRadius) {
       return `${label} (${d.count} - ${percentage}%)`;
     });
 }
-
-function renderWorkloadLegend(container) {
-  const relevantStatuses = {
-    'TO_DO': statusColors['TO_DO'],
-    'IN_PROGRESS': statusColors['IN_PROGRESS'],
-    'BLOCKED': statusColors['BLOCKED'],
-  };
-  
-  const legendData = Object.entries(relevantStatuses).map(([status, color]) => ({
-    status: String(status).replace('_', ' '),
-    color: color
-  }));
-
-  container.select('.workload-legend-container').remove();
-  
-  const legendDiv = container.append('div')
-      .attr('class', 'workload-legend-container')
-      .style('display', 'flex')
-      .style('gap', '20px')
-      .style('padding-top', '15px')
-      .style('margin-top', '10px')
-      .style('flex-wrap', 'wrap')
-      .style('justify-content', 'center'); 
-      
-  legendData.forEach(d => {
-    const item = legendDiv.append('div')
-      .style('display', 'flex')
-      .style('align-items', 'center')
-      .style('gap', '5px')
-      .style('font-size', '12px')
-      .style('color', '#444');
-      
-    item.append('span')
-      .style('width', '12px')
-      .style('height', '12px')
-      .style('border-radius', '3px')
-      .style('background-color', d.color);
-      
-    item.append('span')
-      .text(d.status);
-  });
-}
-
 // =======================================================
 // 3. CARGA DE TRABAJO (Bar Chart) - CORREGIDO
 // =======================================================
