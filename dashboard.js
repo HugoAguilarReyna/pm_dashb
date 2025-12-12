@@ -1,20 +1,18 @@
-// dashboard.js - VERSIÓN FINAL CORREGIDA Y FUNCIONAL
-
 // =======================================================
 // CONFIGURACIÓN GLOBAL Y HELPERS
 // =======================================================
 const API_BASE_URL = 'https://pm-dashb-7.onrender.com';
 
 let lastUpdateTime = null;
-let ganttZoomLevel = 'days'; // 'days' | 'weeks' | 'months'
+let ganttZoomLevel = 'weeks'; // 'days' | 'weeks' | 'months' (Cambiado a 'weeks' por defecto)
 
 // Paleta de colores para estados
 const statusColors = {
-  'TO_DO': '#FF0AC4',     // Rojo claro (Alerta)
-  'IN_PROGRESS': '#50F8FA', // Azul intermedio (Trabajo activo)
-  'BLOCKED': '#0B0D0C',   // Amarillo (Advertencia)
-  'COMPLETED': '#27E568', // Verde oscuro (Éxito)
-  'CANCELLED': '#0B0D0C'  // Gris (Neutro)
+  'TO_DO': '#FF0AC4',     // Rosa fuerte (Alerta/Pendiente)
+  'IN_PROGRESS': '#50F8FA', // Cian (Trabajo activo)
+  'BLOCKED': '#FFCD00',   // Amarillo (Advertencia) - CORREGIDO
+  'COMPLETED': '#27E568', // Verde (Éxito)
+  'CANCELLED': '#555555'  // Gris oscuro (Neutro) - CORREGIDO
 };
 
 // --- FUNCIÓN GLOBAL DE ZOOM ---
@@ -61,14 +59,14 @@ function parseGanttDate(dateString) {
 }
 
 // Helper robusto para obtener el estado de una tarea (uso en Workload, Overdue, Gantt)
-const getTaskStatus = (task) => String(task.status || task._id || 'TO_DO').toUpperCase();
+const getTaskStatus = (task) => String(task.status || 'TO_DO').toUpperCase();
 
 // Helpers robustos para el Donut/Pie Chart
-const getPieStatus = (d) => String(d.data._id || d.data.status || d.data.name || 'TO_DO').toUpperCase();
-const getPieLabel = (d) => String(d.data._id || d.data.status || d.data.name || 'Indefinido').replace('_', ' ');
+const getPieStatus = (d) => String(d.data.status || d.data.name || 'TO_DO').toUpperCase();
+const getPieLabel = (d) => String(d.data.status || d.data.name || 'Indefinido').replace('_', ' ');
 
 // =======================================================
-// 1. CARGA Y SOBREESCRITURA DE CSV
+// 1. CARGA Y SOBREESCRITURA DE CSV (sin cambios)
 // =======================================================
 async function handleIngestCsv() {
   const fileInput = document.getElementById('csv-file-input');
@@ -203,19 +201,7 @@ async function renderProjectStatus() {
         d3.select('#tooltip').style('opacity', 0);
       });
 
-    // *******************************************************
-    // CORRECCIÓN CLAVE: ELIMINAR O COMENTAR ESTE BLOQUE
-    // Este bloque causaba los porcentajes erróneos (700% etc.)
-    // *******************************************************
-    /*
-    arcs.append('text')
-      .attr('transform', d => `translate(${arc.centroid(d)})`)
-      .attr('dy', '0.35em')
-      .text(d => d3.format(".1%")(d.data.count / Math.max(1, totalTasks)))
-      .style('text-anchor', 'middle')
-      .style('fill', 'white')
-      .style('font-size', '12px');
-    */
+    // El bloque comentado que causaba porcentajes erróneos está CORRECTO (debe permanecer comentado/eliminado)
 
     renderLegend(svg, pieData, totalTasks, outerRadius);
   } catch (error) {
@@ -231,7 +217,7 @@ function renderLegend(svg, data, totalTasks, outerRadius) {
   // Agrupar por estado para la leyenda (¡Correcto! Aquí se consolida el 100%)
   const statusCounts = {};
   data.forEach(d => {
-    const status = d.status || d._id;
+    const status = d.status; // Usar d.status, ya que pieData ya lo tiene
     if (!statusCounts[status]) statusCounts[status] = 0;
     statusCounts[status] += d.count;
   });
@@ -313,7 +299,7 @@ async function renderWorkloadChart() {
     const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
     const responseData = await response.json();
     
-    // Extraer array 'data' del objeto
+    // EXTRAER 'data' del objeto responseData
     let data = responseData.data || [];
 
     const container = d3.select('#workload-chart');
@@ -457,7 +443,7 @@ async function renderWorkloadChart() {
 }
 
 // =======================================================
-// 4. TAREAS VENCIDAS (Overdue)
+// 4. TAREAS VENCIDAS (Overdue) (sin cambios)
 // =======================================================
 async function renderOverdueTasks() {
   try {
@@ -514,7 +500,7 @@ async function calculateAndRenderEfficiencyScoreboard() {
         const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
         const responseData = await response.json();
         
-        // Extraer array 'data' del objeto
+        // EXTRAER 'data' del objeto responseData
         const data = responseData.data || [];
         
         const container = d3.select('#efficiency-scoreboard');
@@ -666,7 +652,7 @@ async function renderDailyTasks() {
     const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
     const responseData = await response.json();
     
-    // Extraer array 'data' del objeto
+    // EXTRAER 'data' del objeto responseData
     const data = responseData.data || [];
 
     const container = d3.select('#daily-tasks');
@@ -737,7 +723,7 @@ async function renderDailyTasks() {
 }
 
 // =======================================================
-// 7. MÉTRICAS (KPIs)
+// 7. MÉTRICAS (KPIs) (sin cambios)
 // =======================================================
 async function renderMetrics() {
   try {
@@ -758,7 +744,7 @@ async function renderMetrics() {
 }
 
 // =======================================================
-// 8. GANTT (con filtros) - COMPLETO
+// 8. GANTT (con filtros) - COMPLETO Y CORREGIDO
 // =======================================================
 
 /**
@@ -769,7 +755,7 @@ async function loadGanttFilters() {
         const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
         const responseData = await response.json();
         
-        // Extraer array 'data' del objeto
+        // EXTRAER 'data' del objeto responseData
         const tasks = responseData.data || [];
         
         const userIds = new Set();
@@ -819,229 +805,251 @@ async function renderGanttChart() {
     const response = await fetch(apiUrl);
     const responseData = await response.json();
     
-    // Extraer array 'data' del objeto
+    // EXTRAER 'data' del objeto responseData
     const rawData = responseData.data || [];
 
     const container = d3.select('#gantt-chart');
-    container.html('<div id="gantt-diagnostic"></div>');
-    
+    container.html(''); // Limpiar el contenedor anterior
+
+    // 1. Mapeo y filtrado de datos
     const data = rawData.map(d => {
         const start = parseGanttDate(d.start_date);
         const end = parseGanttDate(d.end_date || d.due_date);
         
+        // La duración en milisegundos
+        const durationMs = (end && start) ? end.getTime() - start.getTime() : 0;
+        // La duración en días (aproximada)
+        const durationDays = durationMs > 0 ? Math.ceil(durationMs / (1000 * 60 * 60 * 24)) : 0;
+
         const userId = String(d.assigned_user_id || 'N/A');
         const userName = userId === 'N/A' ? 'Sin Asignar' : `Usuario ${userId}`;
         const taskName = d.name || d.title || 'Tarea sin nombre';
         
-        let durationDays = 'N/A';
-        if (start && end) {
-            const diffTime = Math.abs(end.getTime() - start.getTime());
-            durationDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-        }
-
         return {
-            ...d,
+            id: d.task_id,
+            name: taskName,
+            user: userName,
             start: start,
             end: end,
-            task_id: String(d._id || d.id || d.task_id || Math.random()),
-            user_id: userId,
-            task_name: taskName,
-            task_label: `${taskName} [${userName}]`,
-            duration_days: durationDays 
+            status: getTaskStatus(d),
+            duration: durationDays
         };
-    }).filter(d => d.start && d.end && d.start <= d.end); // Corregido: start <= end
+    }).filter(d => d.start && d.end && d.end >= d.start); // Solo tareas válidas
 
-    if (data.length === 0) { 
+    if (data.length === 0) {
       container.append('div').attr('class', 'no-data-message')
-        .text('No hay tareas para mostrar en el Gráfico de Gantt con los filtros actuales.');
+        .text('No hay tareas que cumplan con los filtros y tengan fechas válidas.');
       return;
     }
 
-    // --- 2. Preparación y Configuración D3 ---
-    
-    // Agrupar y ordenar por usuario para el eje Y
-    const groupedData = d3.group(data, d => d.user_id);
-    const users = Array.from(groupedData.keys()).sort();
-    const orderedTasks = [];
-    users.forEach(user => {
-        // Ordenar tareas dentro de cada usuario por fecha de inicio
-        const tasks = groupedData.get(user).sort((a, b) => a.start - b.start);
-        tasks.forEach(task => orderedTasks.push(task));
+    // Ordenar tareas: por usuario y luego por fecha de inicio
+    data.sort((a, b) => {
+        if (a.user !== b.user) return a.user.localeCompare(b.user);
+        return a.start.getTime() - b.start.getTime();
     });
-
-    // Definir dimensiones
-    const margin = { top: 20, right: 20, bottom: 60, left: 150 }; // Aumento el bottom para el eje X
-    const containerWidth = container.node().clientWidth || 800;
-    const barHeight = 25;
-    const rowHeight = barHeight + 5;
-    const totalHeight = orderedTasks.length * rowHeight;
-    const height = Math.max(totalHeight, 200);
-    const width = containerWidth - margin.left - margin.right;
     
-    // Calcular dominio del tiempo (eje X)
+    // 2. Configuración de dimensiones y márgenes
+    const margin = { top: 20, right: 20, bottom: 30, left: 150 };
+    const containerWidth = container.node().clientWidth || 900;
+    const barHeight = 25;
+    const barPadding = 5;
+    const rowHeight = barHeight + barPadding;
+    const chartHeight = data.length * rowHeight;
+    const width = containerWidth - margin.left - margin.right;
+    const height = Math.max(chartHeight, 200);
+
+    // 3. Crear SVG
+    const svg = container.append('svg')
+      .attr('width', width + margin.left + margin.right)
+      .attr('height', height + margin.top + margin.bottom)
+      .append('g')
+      .attr('transform', `translate(${margin.left}, ${margin.top})`);
+    
+    // 4. Escalas
     const minDate = d3.min(data, d => d.start);
     const maxDate = d3.max(data, d => d.end);
-    const domainStart = d3.timeDay.offset(minDate, -5); // Espacio antes del inicio
-    const domainEnd = d3.timeDay.offset(maxDate, 5);    // Espacio después del fin
-
-    // Escala de tiempo (X)
-    const xScale = d3.scaleTime()
-        .domain([domainStart, domainEnd])
-        .range([0, width]);
-
-    // Escala de banda (Y) para las tareas
-    const yScale = d3.scaleBand()
-        .domain(orderedTasks.map(d => d.task_id))
-        .range([0, height])
-        .padding(0.1);
-
-    // --- 3. Renderizado SVG ---
     
-    const svg = container.append('svg')
-        .attr('width', width + margin.left + margin.right)
-        .attr('height', height + margin.top + margin.bottom)
-        .append('g')
-        .attr('transform', `translate(${margin.left}, ${margin.top})`);
-        
-    // --- 4. Eje X (Temporal) ---
-    const xAxis = d3.axisBottom(xScale);
+    // Extender el dominio de tiempo para tener un margen visual
+    const domainStart = d3.timeDay.offset(minDate, -1);
+    const domainEnd = d3.timeDay.offset(maxDate, 1);
     
-    if (ganttZoomLevel === 'weeks') {
-        xAxis.ticks(d3.timeWeek.every(1)).tickFormat(d3.timeFormat("%b %d"));
-    } else if (ganttZoomLevel === 'months') {
-        xAxis.ticks(d3.timeMonth.every(1)).tickFormat(d3.timeFormat("%b %Y"));
-    } else { // 'days' por defecto
-        xAxis.ticks(d3.timeDay.every(1)).tickFormat(d3.timeFormat("%d/%m"));
+    const scaleX = d3.scaleTime()
+      .domain([domainStart, domainEnd])
+      .range([0, width]);
+
+    const scaleY = d3.scaleBand()
+      .domain(data.map(d => d.id)) // Usamos el ID como dominio Y
+      .range([0, height])
+      .paddingInner(barPadding / rowHeight);
+
+    // 5. Ejes
+    // Determinar el formato del eje X basado en el nivel de zoom
+    let xAxisFormat, tickInterval;
+    switch (ganttZoomLevel) {
+        case 'days':
+            xAxisFormat = d3.timeFormat("%b %d");
+            tickInterval = d3.timeDay;
+            break;
+        case 'weeks':
+            xAxisFormat = d3.timeFormat("%Y/%W"); // Semana del año
+            tickInterval = d3.timeWeek;
+            break;
+        case 'months':
+        default:
+            xAxisFormat = d3.timeFormat("%b %Y");
+            tickInterval = d3.timeMonth;
+            break;
     }
+
+    const xAxis = d3.axisBottom(scaleX)
+      .tickFormat(xAxisFormat)
+      .tickSize(6)
+      .ticks(tickInterval);
 
     svg.append('g')
-        .attr('class', 'x axis')
-        .attr('transform', `translate(0, ${height})`)
-        .call(xAxis)
-        .selectAll("text") 
-            .style("text-anchor", "end")
-            .attr("dx", "-.8em")
-            .attr("dy", ".15em")
-            .attr("transform", "rotate(-65)");
+      .attr('class', 'x-axis')
+      .attr('transform', `translate(0, ${height})`)
+      .call(xAxis)
+      .selectAll("text")
+      .attr("transform", "rotate(-30)")
+      .style("text-anchor", "end");
 
-    // --- 5. Barras de Gantt y Etiquetas ---
+    // Eje Y (Etiquetas de tareas y usuarios)
+    const yAxis = d3.axisLeft(scaleY)
+      .tickFormat(id => {
+         const task = data.find(d => d.id === id);
+         return `${task.name} (${task.user})`;
+      })
+      .tickSize(0);
+
+    svg.append('g')
+      .attr('class', 'y-axis')
+      .call(yAxis)
+      .selectAll("text")
+      .style("font-size", "12px");
     
-    const tasks = svg.selectAll('.task')
-        .data(orderedTasks)
-        .enter().append('g')
-        .attr('class', 'task')
-        .attr('transform', d => `translate(0, ${yScale(d.task_id)})`);
+    // 6. Dibujo de las Barras de Tareas
+    const bars = svg.selectAll('.task-bar')
+      .data(data)
+      .enter().append('rect')
+      .attr('class', 'task-bar')
+      .attr('x', d => scaleX(d.start))
+      .attr('y', d => scaleY(d.id))
+      .attr('width', d => scaleX(d.end) - scaleX(d.start))
+      .attr('height', scaleY.bandwidth())
+      .attr('fill', d => statusColors[d.status] || '#cccccc')
+      .attr('rx', 3) // bordes redondeados
+      .attr('ry', 3)
+      .style('cursor', 'pointer')
+      .on('mouseover', function (event, d) {
+        // Tooltip al pasar el ratón
+        d3.select('#tooltip')
+          .style('opacity', 1)
+          .html(`
+            <strong>${d.name}</strong><br>
+            Recurso: ${d.user}<br>
+            Estado: ${d.status.replace('_', ' ')}<br>
+            Inicio: ${d3.timeFormat("%Y-%m-%d")(d.start)}<br>
+            Fin: ${d3.timeFormat("%Y-%m-%d")(d.end)} (${d.duration} días)
+          `)
+          .style('left', (event.pageX + 10) + 'px')
+          .style('top', (event.pageY - 28) + 'px');
+      })
+      .on('mouseout', function () {
+        d3.select('#tooltip').style('opacity', 0);
+      });
 
-    // Dibujar las barras
-    tasks.append('rect')
-        .attr('class', 'gantt-bar')
-        .attr('x', d => xScale(d.start))
-        .attr('width', d => Math.max(0, xScale(d.end) - xScale(d.start))) // Usar Math.max para evitar ancho negativo/error
-        .attr('height', yScale.bandwidth())
-        .style('fill', d => statusColors[getTaskStatus(d)] || '#cccccc')
-        .on('mouseover', function (event, d) {
-            d3.select('#tooltip')
-                .style('opacity', 1)
-                .html(`<strong>${d.task_name}</strong><br>Asignado: ${d.user_id === 'N/A' ? 'Sin Asignar' : `Usuario ${d.user_id}`}<br>Inicio: ${d.start.toLocaleDateString()}<br>Fin: ${d.end.toLocaleDateString()}<br>Estado: ${getTaskStatus(d)}`)
-                .style('left', (event.pageX + 10) + 'px')
-                .style('top', (event.pageY - 28) + 'px');
-        })
-        .on('mouseout', function () {
-            d3.select('#tooltip').style('opacity', 0);
-        });
+    // 7. Indicador de "Hoy" (Línea de Referencia Vertical)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (scaleX(today) >= 0 && scaleX(today) <= width) {
+        svg.append('line')
+            .attr('class', 'today-line')
+            .attr('x1', scaleX(today))
+            .attr('x2', scaleX(today))
+            .attr('y1', 0)
+            .attr('y2', height)
+            .style('stroke', 'red')
+            .style('stroke-width', 2)
+            .style('stroke-dasharray', '5,5');
 
-    // Etiquetas de las barras (Nombre de la tarea)
-    tasks.append('text')
-        .attr('class', 'gantt-label')
-        .attr('x', d => xScale(d.start) + 5) // 5px de padding desde el inicio de la barra
-        .attr('y', yScale.bandwidth() / 2)
-        .attr('dy', '.35em')
-        .text(d => d.task_name)
-        .style('fill', 'white') // Texto blanco sobre la barra de color
-        .style('font-size', '10px');
-        
-    // Eje Y (Etiquetas de Tarea y Usuario)
-    svg.selectAll('.task-label-y')
-        .data(orderedTasks)
-        .enter().append('text')
-        .attr('class', 'task-label-y')
-        .attr('x', -5) 
-        .attr('y', d => yScale(d.task_id) + yScale.bandwidth() / 2)
-        .attr('dy', '.35em')
-        .style('text-anchor', 'end')
-        .text(d => d.task_label.substring(0, 35)) // Limitar longitud
-        .style('font-size', '12px');
-
-    // --- 6. Indicador de "Hoy" ---
-    const todayLine = xScale(new Date());
-    if (todayLine >= 0 && todayLine <= width) {
-         svg.append("line")
-            .attr("class", "today-line")
-            .attr("x1", todayLine)
-            .attr("x2", todayLine)
-            .attr("y1", 0)
-            .attr("y2", height)
-            .style("stroke", "red")
-            .style("stroke-width", 2)
-            .style("stroke-dasharray", "4,4");
+        svg.append('text')
+            .attr('class', 'today-label')
+            .attr('x', scaleX(today))
+            .attr('y', -5)
+            .style('fill', 'red')
+            .style('font-size', '12px')
+            .style('text-anchor', 'middle')
+            .text('HOY');
     }
-    
-    // Habilitar scroll horizontal si es necesario
-    setTimeout(() => {
-      const svgWidth = svg.node().parentElement.getBoundingClientRect().width;
-      const containerWidthParent = container.node().parentElement.clientWidth;
-      if (svgWidth > containerWidthParent) container.style('overflow-x', 'auto');
-    }, 50);
-    
+
+    // Habilitar scroll horizontal si el contenido es demasiado ancho
+    if (width + margin.left + margin.right > containerWidth) {
+      container.style('overflow-x', 'auto');
+    }
+
   } catch (error) {
-    console.error("Error al renderizar el Gráfico de Gantt:", error);
-    d3.select('#gantt-chart').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
+    console.error("Error al renderizar el Diagrama de Gantt:", error);
+    d3.select('#gantt-chart').html(`<div class="error-message">Error cargando el Gantt: ${error.message}</div>`);
   }
 }
 
 
 // =======================================================
-// 9. CARGA DE DATOS INICIAL
+// 9. FUNCIÓN DE CARGA INICIAL
 // =======================================================
-function updateLastUpdateTime() {
-    lastUpdateTime = new Date();
-    const timeString = lastUpdateTime.toLocaleTimeString();
-    d3.select('#last-update-time').text(timeString);
-}
-
 async function loadAllData() {
-    console.log("Cargando todos los datos del dashboard...");
-    // Renderizado simultáneo (optimización)
+  console.log("Cargando todos los datos del dashboard...");
+  try {
+    // Carga las dependencias del Gantt primero
+    await loadGanttFilters(); 
+    await renderGanttChart();
+
+    // Carga el resto del dashboard en paralelo
     await Promise.all([
       renderMetrics(),
       renderProjectStatus(),
       renderWorkloadChart(),
       renderOverdueTasks(),
-      calculateAndRenderEfficiencyScoreboard(),
       renderDailyTasks(),
-      loadGanttFilters()
+      calculateAndRenderEfficiencyScoreboard()
     ]);
-    // El Gantt se renderiza al final, ya que depende de los filtros cargados
-    renderGanttChart(); 
-    updateLastUpdateTime();
+    
+    lastUpdateTime = new Date().toLocaleTimeString();
+    d3.select('#last-update-time').text(lastUpdateTime);
     console.log("✅ Carga de datos inicial completa.");
+  } catch (error) {
+    console.error("Fallo durante la carga inicial del dashboard:", error);
+  }
 }
 
-// Inicialización
+// 10. INICIALIZACIÓN
 document.addEventListener('DOMContentLoaded', () => {
     loadAllData();
-    // Añadir eventos a los botones de zoom si no están en el HTML
-    d3.select('#gantt-zoom-days').on('click', () => zoomGantt('days'));
-    d3.select('#gantt-zoom-weeks').on('click', () => zoomGantt('weeks'));
-    d3.select('#gantt-zoom-months').on('click', () => zoomGantt('months'));
     
-    // Añadir eventos a los selectores de filtro para que refresquen el Gantt
-    d3.select('#status-filter').on('change', renderGanttChart);
-    d3.select('#user-filter').on('change', renderGanttChart);
-    
-    // Exponer la función handleIngestCsv si el botón existe
+    // Asignar listeners a los filtros del Gantt (si existen)
+    const statusFilter = document.getElementById('status-filter');
+    const userFilter = document.getElementById('user-filter');
+
+    if (statusFilter) statusFilter.addEventListener('change', renderGanttChart);
+    if (userFilter) userFilter.addEventListener('change', renderGanttChart);
+
+    // Listener para la ingesta de CSV
     const ingestButton = document.getElementById('ingest-csv-button');
-    if (ingestButton) {
-        ingestButton.addEventListener('click', handleIngestCsv);
-    }
+    if (ingestButton) ingestButton.addEventListener('click', handleIngestCsv);
+    
+    // Inicializar Tooltip global de D3
+    d3.select('body').append('div')
+        .attr('id', 'tooltip')
+        .style('opacity', 0)
+        .style('position', 'absolute')
+        .style('padding', '8px')
+        .style('background', 'rgba(0, 0, 0, 0.7)')
+        .style('border-radius', '4px')
+        .style('color', 'white')
+        .style('pointer-events', 'none');
+
+    // Inicializar el estado de zoom (por si la página no lo hace)
+    zoomGantt('weeks');
 });
