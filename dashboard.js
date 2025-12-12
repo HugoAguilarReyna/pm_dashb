@@ -1,6 +1,8 @@
 // dashboard.js - VERSIÓN FINAL CORREGIDA Y FUNCIONAL
 
-// Configuración global
+// =======================================================
+// CONFIGURACIÓN GLOBAL Y HELPERS
+// =======================================================
 const API_BASE_URL = 'https://pm-dashb-7.onrender.com';
 
 let lastUpdateTime = null;
@@ -8,47 +10,54 @@ let ganttZoomLevel = 'days'; // 'days' | 'weeks' | 'months'
 
 // Paleta de colores para estados
 const statusColors = {
-  'TO_DO': '#FF0AC4',     // Rojo claro (Alerta)
-  'IN_PROGRESS': '#50F8FA', // Azul intermedio (Trabajo activo)
-  'BLOCKED': '#0B0D0C',   // Amarillo (Advertencia)
-  'COMPLETED': '#27E568', // Verde oscuro (Éxito)
-  'CANCELLED': '#0B0D0C'  // Gris (Neutro)
+  'TO_DO': '#FF0AC4',     // Rojo claro (Alerta)
+  'IN_PROGRESS': '#50F8FA', // Azul intermedio (Trabajo activo)
+  'BLOCKED': '#0B0D0C',   // Amarillo (Advertencia)
+  'COMPLETED': '#27E568', // Verde oscuro (Éxito)
+  'CANCELLED': '#0B0D0C'  // Gris (Neutro)
 };
 
 // --- FUNCIÓN GLOBAL DE ZOOM ---
 function zoomGantt(level) {
-  ganttZoomLevel = level;
-  const zoomSelect = document.getElementById('gantt-zoom-level');
-  if (zoomSelect) zoomSelect.value = level;
-  if (typeof renderGanttChart === 'function') renderGanttChart();
-  document.querySelectorAll('.gantt-zoom-active').forEach(el => el.classList.remove('gantt-zoom-active'));
-  const btn = document.querySelector(`[data-zoom="${level}"]`);
-  if (btn) btn.classList.add('gantt-zoom-active');
+  ganttZoomLevel = level;
+  const zoomSelect = document.getElementById('gantt-zoom-level');
+  if (zoomSelect) zoomSelect.value = level;
+  if (typeof renderGanttChart === 'function') renderGanttChart();
+  document.querySelectorAll('.gantt-zoom-active').forEach(el => el.classList.remove('gantt-zoom-active'));
+  const btn = document.querySelector(`[data-zoom="${level}"]`);
+  if (btn) btn.classList.add('gantt-zoom-active');
 }
 window.zoomGantt = zoomGantt;
 
 /**
- * Función CRÍTICA: Resetea los filtros de Estado y Usuario y refresca el Gantt.
- * EXPUESTA GLOBALMENTE para el onclick="resetFiltersAndRefresh()"
- */
+ * Función CRÍTICA: Resetea los filtros de Estado y Usuario y refresca el Gantt.
+ * EXPUESTA GLOBALMENTE para el onclick="resetFiltersAndRefresh()"
+ */
 function resetFiltersAndRefresh() {
-    const filterElement = document.getElementById('status-filter');
-    const userFilterElement = document.getElementById('user-filter');
+    const filterElement = document.getElementById('status-filter');
+    const userFilterElement = document.getElementById('user-filter');
 
-    if (filterElement) filterElement.value = '';
-    if (userFilterElement) userFilterElement.value = ''; 
+    if (filterElement) filterElement.value = '';
+    if (userFilterElement) userFilterElement.value = ''; 
 
-    renderGanttChart();
+    renderGanttChart();
 }
-window.resetFiltersAndRefresh = resetFiltersAndRefresh; 
+window.resetFiltersAndRefresh = resetFiltersAndRefresh; 
 
 // Helper para parsear la fecha (utilizado en Scoreboard y Tareas Próximas)
 function parseDateFlexible(dateString) {
-    if (!dateString) return null;
-    let date = new Date(String(dateString).trim());
-    // Limpiar la hora para la comparación
-    if (!isNaN(date.getTime())) date.setHours(0, 0, 0, 0); 
-    return isNaN(date.getTime()) ? null : date;
+    if (!dateString) return null;
+    let date = new Date(String(dateString).trim());
+    // Limpiar la hora para la comparación
+    if (!isNaN(date.getTime())) date.setHours(0, 0, 0, 0); 
+    return isNaN(date.getTime()) ? null : date;
+}
+
+// Helper para parsear la fecha del Gantt (permite la hora si es necesario)
+function parseGanttDate(dateString) {
+    if (!dateString) return null;
+    let date = new Date(String(dateString).trim());
+    return isNaN(date.getTime()) ? null : date;
 }
 
 // Helper robusto para obtener el estado de una tarea (uso en Workload, Overdue, Gantt)
@@ -62,1011 +71,977 @@ const getPieLabel = (d) => String(d.data._id || d.data.status || d.data.name || 
 // 1. CARGA Y SOBREESCRITURA DE CSV
 // =======================================================
 async function handleIngestCsv() {
-  const fileInput = document.getElementById('csv-file-input');
-  const statusDiv = document.getElementById('ingestion-status');
+  const fileInput = document.getElementById('csv-file-input');
+  const statusDiv = document.getElementById('ingestion-status');
 
-  if (!statusDiv) return;
-  statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo archivo...';
-  statusDiv.style.color = '#333';
+  if (!statusDiv) return;
+  statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo archivo...';
+  statusDiv.style.color = '#333';
 
-  if (!fileInput || fileInput.files.length === 0) {
-    statusDiv.innerHTML = 'Por favor, selecciona un archivo CSV.';
-    statusDiv.style.color = 'red';
-    return;
-  }
+  if (!fileInput || fileInput.files.length === 0) {
+    statusDiv.innerHTML = 'Por favor, selecciona un archivo CSV.';
+    statusDiv.style.color = 'red';
+    return;
+  }
 
-  const file = fileInput.files[0];
-  const formData = new FormData();
-  formData.append('file', file);
+  const file = fileInput.files[0];
+  const formData = new FormData();
+  formData.append('file', file);
 
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/ingest/tasks`, {
-      method: 'POST',
-      body: formData,
-    });
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/ingest/tasks`, {
+      method: 'POST',
+      body: formData,
+    });
 
-    const result = await response.json();
+    const result = await response.json();
 
-    if (response.ok && result.status === 'success') {
-      statusDiv.innerHTML = `<i class="fas fa-check-circle"></i> ${result.message}`;
-      await loadAllData();
-      fileInput.value = '';
-    } else {
-      const errorMessage = result.detail || result.message || `Error del servidor (${response.status} ${response.statusText}).`;
-      statusDiv.innerHTML = `<i class="fas fa-times-circle"></i> Fallo en la ingesta: ${errorMessage}`;
-      statusDiv.style.color = 'red';
-    }
-  } catch (error) {
-    console.error("Error de red o CORS al subir el archivo:", error);
-    statusDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> Error de conexión con la API. Revise la consola del navegador.`;
-    statusDiv.style.color = 'red';
-  }
+    if (response.ok && result.status === 'success') {
+      statusDiv.innerHTML = `<i class="fas fa-check-circle"></i> ${result.message}`;
+      await loadAllData();
+      fileInput.value = '';
+    } else {
+      const errorMessage = result.detail || result.message || `Error del servidor (${response.status} ${response.statusText}).`;
+      statusDiv.innerHTML = `<i class="fas fa-times-circle"></i> Fallo en la ingesta: ${errorMessage}`;
+      statusDiv.style.color = 'red';
+    }
+  } catch (error) {
+    console.error("Error de red o CORS al subir el archivo:", error);
+    statusDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> Error de conexión con la API. Revise la consola del navegador.`;
+    statusDiv.style.color = 'red';
+  }
 }
 
 // =======================================================
 // 2. ESTADO DEL PROYECTO (Donut Chart) - CORREGIDO
+// La lógica de renderizado de texto interno incorrecto ha sido ELIMINADA.
 // =======================================================
 async function renderProjectStatus() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/project/status`);
-    const responseData = await response.json();
-    
-    // CORRECCIÓN: Extraer array 'projects' del objeto
-    const data = responseData.projects || [];
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/project/status`);
+    const responseData = await response.json();
+    
+    // Extraer array 'projects' del objeto
+    const data = responseData.projects || [];
 
-    const container = d3.select('#project-status-chart');
-    container.html('');
+    const container = d3.select('#project-status-chart');
+    container.html('');
 
-    if (!Array.isArray(data) || data.length === 0) {
-      container.append('div').attr('class', 'no-data-message')
-        .text('No hay datos de tareas para el estado del proyecto.');
-      return;
-    }
+    if (!Array.isArray(data) || data.length === 0) {
+      container.append('div').attr('class', 'no-data-message')
+        .text('No hay datos de tareas para el estado del proyecto.');
+      return;
+    }
 
-    const totalTasks = data.reduce((sum, d) => sum + (Number(d.total_tasks) || 0), 0);
-    const width = 450, height = 300, outerRadius = 120, innerRadius = outerRadius * 0.6;
+    // Cálculo del total para el porcentaje (¡CRÍTICO!)
+    const totalTasks = data.reduce((sum, d) => sum + (Number(d.total_tasks) || 0), 0);
+    const width = 450, height = 300, outerRadius = 120, innerRadius = outerRadius * 0.6;
 
-    const svg = container.append('svg')
-      .attr('width', width)
-      .attr('height', height)
-      .append('g')
-      .attr('transform', `translate(${outerRadius + 20}, ${height / 2})`);
+    const svg = container.append('svg')
+      .attr('width', width)
+      .attr('height', height)
+      .append('g')
+      .attr('transform', `translate(${outerRadius + 20}, ${height / 2})`);
 
-    // Preparar datos para el gráfico de donut
-    const pieData = [];
-    data.forEach(project => {
-      if (project.statuses && Array.isArray(project.statuses)) {
-        project.statuses.forEach(status => {
-          pieData.push({
-            _id: `${project.project} - ${status.status}`,
-            status: status.status,
-            count: status.count,
-            name: status.status
-          });
-        });
-      }
-    });
+    // Preparar datos para el gráfico de donut
+    const pieData = [];
+    data.forEach(project => {
+      if (project.statuses && Array.isArray(project.statuses)) {
+        project.statuses.forEach(status => {
+          pieData.push({
+            _id: `${project.project} - ${status.status}`,
+            status: status.status,
+            count: status.count,
+            name: status.status
+          });
+        });
+      }
+    });
 
-    if (pieData.length === 0) {
-      container.append('div').attr('class', 'no-data-message')
-        .text('No hay datos de estados para mostrar.');
-      return;
-    }
+    if (pieData.length === 0) {
+      container.append('div').attr('class', 'no-data-message')
+        .text('No hay datos de estados para mostrar.');
+      return;
+    }
 
-    const pie = d3.pie().value(d => d.count).sort(null);
-    const arc = d3.arc().innerRadius(innerRadius).outerRadius(outerRadius);
+    const pie = d3.pie().value(d => d.count).sort(null);
+    const arc = d3.arc().innerRadius(innerRadius).outerRadius(outerRadius);
 
-    const arcs = svg.selectAll('.arc')
-      .data(pie(pieData))
-      .enter().append('g')
-      .attr('class', 'arc');
+    const arcs = svg.selectAll('.arc')
+      .data(pie(pieData))
+      .enter().append('g')
+      .attr('class', 'arc');
 
-    arcs.append('path')
-      .attr('d', arc)
-      .attr('fill', d => statusColors[getPieStatus(d)] || '#cccccc')
-      .style('cursor', 'pointer')
-      .on('click', function (event, d) {
-        const status = getPieStatus(d);
-        const filterElement = document.getElementById('status-filter');
-        const userFilterElement = document.getElementById('user-filter'); 
+    arcs.append('path')
+      .attr('d', arc)
+      .attr('fill', d => statusColors[getPieStatus(d)] || '#cccccc')
+      .style('cursor', 'pointer')
+      .on('click', function (event, d) {
+        const status = getPieStatus(d);
+        const filterElement = document.getElementById('status-filter');
+        const userFilterElement = document.getElementById('user-filter'); 
 
-        if (filterElement) {
-          if (filterElement.value === status) {
-              resetFiltersAndRefresh();
-              return;
-          }
-          filterElement.value = status;
-          if(userFilterElement) userFilterElement.value = '';
-          
-          renderGanttChart();
-        }
-      })
-      .on('mouseover', function (event, d) {
-        d3.select('#tooltip')
-          .style('opacity', 1)
-          .html(`<strong>${getPieLabel(d)}</strong>: ${d.data.count} tareas (${d3.format(".1%")(d.data.count / Math.max(1, totalTasks))})`)
-          .style('left', (event.pageX + 10) + 'px')
-          .style('top', (event.pageY - 28) + 'px');
-      })
-      .on('mouseout', function () {
-        d3.select('#tooltip').style('opacity', 0);
-      });
+        if (filterElement) {
+          if (filterElement.value === status) {
+              resetFiltersAndRefresh();
+              return;
+          }
+          filterElement.value = status;
+          if(userFilterElement) userFilterElement.value = '';
+          
+          renderGanttChart();
+        }
+      })
+      .on('mouseover', function (event, d) {
+        d3.select('#tooltip')
+          .style('opacity', 1)
+          .html(`<strong>${getPieLabel(d)}</strong>: ${d.data.count} tareas (${d3.format(".1%")(d.data.count / Math.max(1, totalTasks))})`)
+          .style('left', (event.pageX + 10) + 'px')
+          .style('top', (event.pageY - 28) + 'px');
+      })
+      .on('mouseout', function () {
+        d3.select('#tooltip').style('opacity', 0);
+      });
 
-    arcs.append('text')
-      .attr('transform', d => `translate(${arc.centroid(d)})`)
-      .attr('dy', '0.35em')
-      .text(d => d3.format(".1%")(d.data.count / Math.max(1, totalTasks)))
-      .style('text-anchor', 'middle')
-      .style('fill', 'white')
-      .style('font-size', '12px');
+    // *******************************************************
+    // CORRECCIÓN CLAVE: ELIMINAR O COMENTAR ESTE BLOQUE
+    // Este bloque causaba los porcentajes erróneos (700% etc.)
+    // *******************************************************
+    /*
+    arcs.append('text')
+      .attr('transform', d => `translate(${arc.centroid(d)})`)
+      .attr('dy', '0.35em')
+      .text(d => d3.format(".1%")(d.data.count / Math.max(1, totalTasks)))
+      .style('text-anchor', 'middle')
+      .style('fill', 'white')
+      .style('font-size', '12px');
+    */
 
-    renderLegend(svg, pieData, totalTasks, outerRadius);
-  } catch (error) {
-    console.error("Error al renderizar el estado del proyecto:", error);
-    d3.select('#project-status-chart').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
-  }
+    renderLegend(svg, pieData, totalTasks, outerRadius);
+  } catch (error) {
+    console.error("Error al renderizar el estado del proyecto:", error);
+    d3.select('#project-status-chart').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
+  }
 }
 
 function renderLegend(svg, data, totalTasks, outerRadius) {
-  const legendOffset = outerRadius + 50;
-  const legendSpacing = 20;
+  const legendOffset = outerRadius + 50;
+  const legendSpacing = 20;
 
-  // Agrupar por estado para la leyenda
-  const statusCounts = {};
-  data.forEach(d => {
-    const status = d.status || d._id;
-    if (!statusCounts[status]) statusCounts[status] = 0;
-    statusCounts[status] += d.count;
-  });
+  // Agrupar por estado para la leyenda (¡Correcto! Aquí se consolida el 100%)
+  const statusCounts = {};
+  data.forEach(d => {
+    const status = d.status || d._id;
+    if (!statusCounts[status]) statusCounts[status] = 0;
+    statusCounts[status] += d.count;
+  });
 
-  const legendData = Object.keys(statusCounts).map(status => ({
-    _id: status,
-    count: statusCounts[status]
-  }));
+  const legendData = Object.keys(statusCounts).map(status => ({
+    _id: status,
+    count: statusCounts[status]
+  }));
 
-  const legend = svg.selectAll(".legend")
-    .data(legendData)
-    .enter().append("g")
-    .attr("class", "legend")
-    .attr("transform", (d, i) => `translate(${legendOffset}, ${i * legendSpacing - (legendData.length * legendSpacing) / 2 + 10})`);
+  const legend = svg.selectAll(".legend")
+    .data(legendData)
+    .enter().append("g")
+    .attr("class", "legend")
+    .attr("transform", (d, i) => `translate(${legendOffset}, ${i * legendSpacing - (legendData.length * legendSpacing) / 2 + 10})`);
 
-  legend.append("rect")
-    .attr("x", 0)
-    .attr("width", 10)
-    .attr("height", 10)
-    .attr('fill', d => statusColors[String(d._id).toUpperCase()] || '#888888');
+  legend.append("rect")
+    .attr("x", 0)
+    .attr("width", 10)
+    .attr("height", 10)
+    .attr('fill', d => statusColors[String(d._id).toUpperCase()] || '#888888');
 
-  legend.append("text")
-    .attr("x", 15)
-    .attr("y", 9)
-    .attr("dy", ".35em")
-    .style("text-anchor", "start")
-    .style("font-size", "12px")
-    .text(d => `${String(d._id || 'Indefinido').replace('_', ' ')} - ${((d.count / Math.max(1, totalTasks)) * 100).toFixed(1)}%`);
+  legend.append("text")
+    .attr("x", 15)
+    .attr("y", 9)
+    .attr("dy", ".35em")
+    .style("text-anchor", "start")
+    .style("font-size", "12px")
+    .text(d => `${String(d._id || 'Indefinido').replace('_', ' ')} - ${((d.count / Math.max(1, totalTasks)) * 100).toFixed(1)}%`);
 }
 
 
 function renderWorkloadLegend(container) {
-  const relevantStatuses = {
-    'TO_DO': statusColors['TO_DO'],
-    'IN_PROGRESS': statusColors['IN_PROGRESS'],
-    'BLOCKED': statusColors['BLOCKED'],
-  };
-  
-  const legendData = Object.entries(relevantStatuses).map(([status, color]) => ({
-    status: String(status).replace('_', ' '),
-    color: color
-  }));
+  const relevantStatuses = {
+    'TO_DO': statusColors['TO_DO'],
+    'IN_PROGRESS': statusColors['IN_PROGRESS'],
+    'BLOCKED': statusColors['BLOCKED'],
+  };
+  
+  const legendData = Object.entries(relevantStatuses).map(([status, color]) => ({
+    status: String(status).replace('_', ' '),
+    color: color
+  }));
 
-  container.select('.workload-legend-container').remove();
-  
-  const legendDiv = container.append('div')
-      .attr('class', 'workload-legend-container')
-      .style('display', 'flex')
-      .style('gap', '20px')
-      .style('padding-top', '15px')
-      .style('margin-top', '10px')
-      .style('flex-wrap', 'wrap')
-      .style('justify-content', 'center'); 
-      
-  legendData.forEach(d => {
-    const item = legendDiv.append('div')
-      .style('display', 'flex')
-      .style('align-items', 'center')
-      .style('gap', '5px')
-      .style('font-size', '12px')
-      .style('color', '#444');
-      
-    item.append('span')
-      .style('width', '12px')
-      .style('height', '12px')
-      .style('border-radius', '3px')
-      .style('background-color', d.color);
-      
-    item.append('span')
-      .text(d.status);
-  });
+  container.select('.workload-legend-container').remove();
+  
+  const legendDiv = container.append('div')
+      .attr('class', 'workload-legend-container')
+      .style('display', 'flex')
+      .style('gap', '20px')
+      .style('padding-top', '15px')
+      .style('margin-top', '10px')
+      .style('flex-wrap', 'wrap')
+      .style('justify-content', 'center'); 
+      
+  legendData.forEach(d => {
+    const item = legendDiv.append('div')
+      .style('display', 'flex')
+      .style('align-items', 'center')
+      .style('gap', '5px')
+      .style('font-size', '12px')
+      .style('color', '#444');
+      
+    item.append('span')
+      .style('width', '12px')
+      .style('height', '12px')
+      .style('border-radius', '3px')
+      .style('background-color', d.color);
+      
+    item.append('span')
+      .text(d.status);
+  });
 }
 
 // =======================================================
 // 3. CARGA DE TRABAJO (Bar Chart) - CORREGIDO
 // =======================================================
 async function renderWorkloadChart() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
-    const responseData = await response.json();
-    
-    // CORRECCIÓN: Extraer array 'data' del objeto
-    let data = responseData.data || [];
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
+    const responseData = await response.json();
+    
+    // Extraer array 'data' del objeto
+    let data = responseData.data || [];
 
-    const container = d3.select('#workload-chart');
-    container.html('');
+    const container = d3.select('#workload-chart');
+    container.html('');
 
-    if (!Array.isArray(data) || data.length === 0) {
-      container.append('div').attr('class', 'no-data-message')
-        .text('No hay datos de tareas para la carga de trabajo.');
-      renderWorkloadLegend(container); 
-      return;
-    }
+    if (!Array.isArray(data) || data.length === 0) {
+      container.append('div').attr('class', 'no-data-message')
+        .text('No hay datos de tareas para la carga de trabajo.');
+      renderWorkloadLegend(container); 
+      return;
+    }
 
-    const statusKeys = Object.keys(statusColors).filter(s => s !== 'COMPLETED' && s !== 'CANCELLED');
-    
-    const dataByStatus = d3.group(
-        data.filter(d => statusKeys.includes(getTaskStatus(d))), 
-        d => String(d.assigned_user_id || 'N/A')
-    );
+    const statusKeys = Object.keys(statusColors).filter(s => s !== 'COMPLETED' && s !== 'CANCELLED');
+    
+    const dataByStatus = d3.group(
+        data.filter(d => statusKeys.includes(getTaskStatus(d))), 
+        d => String(d.assigned_user_id || 'N/A')
+    );
 
-    let processedData = Array.from(dataByStatus, ([raw_user_id, tasks]) => { 
-      const display_user_id = raw_user_id === 'N/A' ? 'Sin Asignar' : `Usuario ${raw_user_id}`; 
-      const userEntry = { 
-        raw_user_id: raw_user_id, 
-        display_user_id: display_user_id 
-      };
-      
-      statusKeys.forEach(status => {
-        userEntry[status] = tasks.filter(t => getTaskStatus(t) === status).length;
-      });
-      userEntry.total = Object.values(userEntry).reduce((sum, val) => typeof val === 'number' ? sum + val : sum, 0); 
-      return userEntry;
-    }).filter(d => d.total > 0).sort((a, b) => b.total - a.total);
-    
-    if (processedData.length === 0) {
-      container.append('div').attr('class', 'no-data-message')
-        .text('No hay tareas activas o pendientes asignadas.');
-      renderWorkloadLegend(container);
-      return;
-    }
-    
-    const series = d3.stack().keys(statusKeys)(processedData);
+    let processedData = Array.from(dataByStatus, ([raw_user_id, tasks]) => { 
+      const display_user_id = raw_user_id === 'N/A' ? 'Sin Asignar' : `Usuario ${raw_user_id}`; 
+      const userEntry = { 
+        raw_user_id: raw_user_id, 
+        display_user_id: display_user_id 
+      };
+      
+      statusKeys.forEach(status => {
+        userEntry[status] = tasks.filter(t => getTaskStatus(t) === status).length;
+      });
+      userEntry.total = Object.values(userEntry).reduce((sum, val) => typeof val === 'number' ? sum + val : sum, 0); 
+      return userEntry;
+    }).filter(d => d.total > 0).sort((a, b) => b.total - a.total);
+    
+    if (processedData.length === 0) {
+      container.append('div').attr('class', 'no-data-message')
+        .text('No hay tareas activas o pendientes asignadas.');
+      renderWorkloadLegend(container);
+      return;
+    }
+    
+    const series = d3.stack().keys(statusKeys)(processedData);
 
-    const margin = { top: 20, right: 60, bottom: 50, left: 200 }; 
-    const containerWidth = container.node().clientWidth || 600;
-    const width = Math.max(containerWidth - margin.left - margin.right, 400);
+    const margin = { top: 20, right: 60, bottom: 50, left: 200 }; 
+    const containerWidth = container.node().clientWidth || 600;
+    const width = Math.max(containerWidth - margin.left - margin.right, 400);
 
-    const LEGEND_HEIGHT = 40; 
-    const containerHeight = container.node().clientHeight || 600; 
-    const height = containerHeight - margin.top - margin.bottom - LEGEND_HEIGHT; 
-    const fallbackHeight = Math.max(processedData.length * 35, 200);
-    const finalHeight = height > 0 ? height : fallbackHeight;
+    const LEGEND_HEIGHT = 40; 
+    const containerHeight = container.node().clientHeight || 600; 
+    const height = containerHeight - margin.top - margin.bottom - LEGEND_HEIGHT; 
+    const fallbackHeight = Math.max(processedData.length * 35, 200);
+    const finalHeight = height > 0 ? height : fallbackHeight;
 
-    const svg = container.append('svg')
-      .attr('width', width + margin.left + margin.right)
-      .attr('height', finalHeight + margin.top + margin.bottom) 
-      .append('g')
-      .attr('transform', `translate(${margin.left}, ${margin.top})`);
+    const svg = container.append('svg')
+      .attr('width', width + margin.left + margin.right)
+      .attr('height', finalHeight + margin.top + margin.bottom) 
+      .append('g')
+      .attr('transform', `translate(${margin.left}, ${margin.top})`);
 
-    const xMax = d3.max(processedData, d => d.total); 
-    const x = d3.scaleLinear().domain([0, xMax]).range([0, width]);
-    const y = d3.scaleBand().domain(processedData.map(d => d.display_user_id)).range([0, finalHeight]).padding(0.3);
+    const xMax = d3.max(processedData, d => d.total); 
+    const x = d3.scaleLinear().domain([0, xMax]).range([0, width]);
+    const y = d3.scaleBand().domain(processedData.map(d => d.display_user_id)).range([0, finalHeight]).padding(0.3);
 
-    svg.append('g').attr('transform', `translate(0, ${finalHeight})`).call(d3.axisBottom(x).ticks(Math.min(10, xMax)).tickFormat(d3.format("d")))
-      .selectAll('text').style('font-size', '14px'); 
+    svg.append('g').attr('transform', `translate(0, ${finalHeight})`).call(d3.axisBottom(x).ticks(Math.min(10, xMax)).tickFormat(d3.format("d")))
+      .selectAll('text').style('font-size', '14px'); 
 
-    svg.append('g')
-        .call(d3.axisLeft(y).tickFormat(d => d)) 
-        .selectAll('text')
-        .style('font-size', '14px') 
-        .attr('text-anchor', 'end')
-        .attr('dx', '-0.5em');
+    svg.append('g')
+        .call(d3.axisLeft(y).tickFormat(d => d)) 
+        .selectAll('text')
+        .style('font-size', '14px') 
+        .attr('text-anchor', 'end')
+        .attr('dx', '-0.5em');
 
-    svg.append("g")
-      .selectAll("g")
-      .data(series)
-      .enter().append("g")
-      .attr("fill", d => statusColors[d.key])
-      .selectAll("rect")
-      .data(d => d)
-      .enter().append("rect")
-      .attr("x", d => x(d[0]))
-      .attr("y", d => y(d.data.display_user_id))
-      .attr("height", y.bandwidth())
-      .attr("width", d => x(d[1]) - x(d[0]))
-      .style('cursor', 'pointer')
-      .on('click', function (event, d) { 
-        const rawUserId = d.data.raw_user_id;
-        const filterElement = document.getElementById('user-filter');
-        const statusFilterElement = document.getElementById('status-filter'); 
-        
-        if (filterElement) {
-          const filterValue = rawUserId === 'N/A' ? '' : rawUserId; 
-          
-          if (filterElement.value === filterValue) {
-              resetFiltersAndRefresh();
-              return;
-          }
-          
-          filterElement.value = filterValue;
-          if(statusFilterElement) statusFilterElement.value = '';
+    svg.append("g")
+      .selectAll("g")
+      .data(series)
+      .enter().append("g")
+      .attr("fill", d => statusColors[d.key])
+      .selectAll("rect")
+      .data(d => d)
+      .enter().append("rect")
+      .attr("x", d => x(d[0]))
+      .attr("y", d => y(d.data.display_user_id))
+      .attr("height", y.bandwidth())
+      .attr("width", d => x(d[1]) - x(d[0]))
+      .style('cursor', 'pointer')
+      .on('click', function (event, d) { 
+        const rawUserId = d.data.raw_user_id;
+        const filterElement = document.getElementById('user-filter');
+        const statusFilterElement = document.getElementById('status-filter'); 
+        
+        if (filterElement) {
+          const filterValue = rawUserId === 'N/A' ? '' : rawUserId; 
+          
+          if (filterElement.value === filterValue) {
+              resetFiltersAndRefresh();
+              return;
+          }
+          
+          filterElement.value = filterValue;
+          if(statusFilterElement) statusFilterElement.value = '';
 
-          renderGanttChart();
-        }
-      })
-      .on('mouseover', function (event, d) {
-        const statusKey = d3.select(this.parentNode).datum().key;
-        d3.select('#tooltip')
-          .style('opacity', 1)
-          .html(`<strong>${d.data.display_user_id}</strong><br>${statusKey.replace('_', ' ')}: ${d[1] - d[0]}`) 
-          .style('left', (event.pageX + 10) + 'px')
-          .style('top', (event.pageY - 28) + 'px');
-      })
-      .on('mouseout', function () {
-        d3.select('#tooltip').style('opacity', 0);
-      });
+          renderGanttChart();
+        }
+      })
+      .on('mouseover', function (event, d) {
+        const statusKey = d3.select(this.parentNode).datum().key;
+        d3.select('#tooltip')
+          .style('opacity', 1)
+          .html(`<strong>${d.data.display_user_id}</strong><br>${statusKey.replace('_', ' ')}: ${d[1] - d[0]}`) 
+          .style('left', (event.pageX + 10) + 'px')
+          .style('top', (event.pageY - 28) + 'px');
+      })
+      .on('mouseout', function () {
+        d3.select('#tooltip').style('opacity', 0);
+      });
 
-    svg.selectAll('.total-label')
-      .data(processedData)
-      .enter().append('text')
-      .attr('class', 'total-label')
-      .attr('x', d => x(d.total) + 6)
-      .attr('y', d => y(d.display_user_id) + y.bandwidth() / 2)
-      .attr('dy', '0.35em')
-      .text(d => d.total)
-      .style('font-size', '12px')
-      .style('fill', '#111')
-      .style('font-weight', 'bold');
+    svg.selectAll('.total-label')
+      .data(processedData)
+      .enter().append('text')
+      .attr('class', 'total-label')
+      .attr('x', d => x(d.total) + 6)
+      .attr('y', d => y(d.display_user_id) + y.bandwidth() / 2)
+      .attr('dy', '0.35em')
+      .text(d => d.total)
+      .style('font-size', '12px')
+      .style('fill', '#111')
+      .style('font-weight', 'bold');
 
-    renderWorkloadLegend(container); 
+    renderWorkloadLegend(container); 
 
-    setTimeout(() => {
-      const svgWidth = svg.node().parentElement.getBoundingClientRect().width;
-      const containerWidthParent = container.node().parentElement.clientWidth;
-      if (svgWidth > containerWidthParent) container.style('overflow-x', 'auto');
-    }, 50);
+    setTimeout(() => {
+      const svgWidth = svg.node().parentElement.getBoundingClientRect().width;
+      const containerWidthParent = container.node().parentElement.clientWidth;
+      if (svgWidth > containerWidthParent) container.style('overflow-x', 'auto');
+    }, 50);
 
-  } catch (error) {
-    console.error("Error al renderizar la carga de trabajo:", error);
-    d3.select('#workload-chart').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
-  }
+  } catch (error) {
+    console.error("Error al renderizar la carga de trabajo:", error);
+    d3.select('#workload-chart').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
+  }
 }
 
 // =======================================================
 // 4. TAREAS VENCIDAS (Overdue)
 // =======================================================
 async function renderOverdueTasks() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/tasks/overdue`);
-    const data = await response.json();
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/overdue`);
+    const data = await response.json();
 
-    const container = d3.select('#overdue-tasks');
-    container.html('');
+    const container = d3.select('#overdue-tasks');
+    container.html('');
 
-    if (!Array.isArray(data) || data.length === 0) {
-      container.append('div').attr('class', 'no-data-message')
-        .text('¡Excelente! No hay tareas vencidas.');
-      return;
-    }
+    if (!Array.isArray(data) || data.length === 0) {
+      container.append('div').attr('class', 'no-data-message')
+        .text('¡Excelente! No hay tareas vencidas.');
+      return;
+    }
 
-    data.forEach(task => {
-        const statusKey = getTaskStatus(task);
-        const color = statusKey === 'TO_DO' || statusKey === 'IN_PROGRESS' || statusKey === 'BLOCKED' ? statusColors['TO_DO'] : statusColors['CANCELLED'];
+    data.forEach(task => {
+        const statusKey = getTaskStatus(task);
+        const color = statusKey === 'TO_DO' || statusKey === 'IN_PROGRESS' || statusKey === 'BLOCKED' ? statusColors['TO_DO'] : statusColors['CANCELLED'];
 
-        container.append('div')
-            .attr('class', `task-item overdue`)
-            .attr('style', `border-left: 5px solid ${color};`)
-            .html(`
-                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <div style="font-weight: 600; font-size: 16px; flex-grow: 1;">
-                        <i class="fas fa-exclamation-triangle" style="color: ${color};"></i>
-                        <span class="task-title">${task.name || task.title || 'Tarea sin nombre'}</span>
-                    </div>
-                    
-                    <div style="text-align:right; margin-left: 10px; min-width: 100px;">
-                        <div class="user-badge" style="font-size: 14px; background-color: ${color}; color: white; padding: 2px 6px; border-radius: 4px; display: inline-block;">
-                            Usuario ${task.assigned_user_id || task.assigned_to || 'N/A'}
-                        </div>
-                        <div class="task-date" style="margin-top:6px; font-size: 14px;">
-                            Venció hace 
-                            <span style="font-weight: bold; color: ${statusColors['TO_DO']}; display: block;">${task.days_overdue || '?'} días</span>
-                        </div>
-                    </div>
-                </div>
-            `);
-    });
+        container.append('div')
+            .attr('class', `task-item overdue`)
+            .attr('style', `border-left: 5px solid ${color};`)
+            .html(`
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <div style="font-weight: 600; font-size: 16px; flex-grow: 1;">
+                        <i class="fas fa-exclamation-triangle" style="color: ${color};"></i>
+                        <span class="task-title">${task.name || task.title || 'Tarea sin nombre'}</span>
+                    </div>
+                    
+                    <div style="text-align:right; margin-left: 10px; min-width: 100px;">
+                        <div class="user-badge" style="font-size: 14px; background-color: ${color}; color: white; padding: 2px 6px; border-radius: 4px; display: inline-block;">
+                            Usuario ${task.assigned_user_id || task.assigned_to || 'N/A'}
+                        </div>
+                        <div class="task-date" style="margin-top:6px; font-size: 14px;">
+                            Venció hace 
+                            <span style="font-weight: bold; color: ${statusColors['TO_DO']}; display: block;">${task.days_overdue || '?'} días</span>
+                        </div>
+                    </div>
+                </div>
+            `);
+    });
 
-  } catch (error) {
-    console.error("Error al renderizar tareas vencidas:", error);
-    d3.select('#overdue-tasks').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
-  }
+  } catch (error) {
+    console.error("Error al renderizar tareas vencidas:", error);
+    d3.select('#overdue-tasks').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
+  }
 }
 
 // =======================================================
 // 5. SCOREBOARD DE EFICIENCIA POR RECURSO - CORREGIDO
 // =======================================================
 async function calculateAndRenderEfficiencyScoreboard() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
-        const responseData = await response.json();
-        
-        // CORRECCIÓN: Extraer array 'data' del objeto
-        const data = responseData.data || [];
-        
-        const container = d3.select('#efficiency-scoreboard');
-        container.html('');
-        
-        container.style('height', 'auto');
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
+        const responseData = await response.json();
+        
+        // Extraer array 'data' del objeto
+        const data = responseData.data || [];
+        
+        const container = d3.select('#efficiency-scoreboard');
+        container.html('');
+        
+        container.style('height', 'auto');
 
-        if (!Array.isArray(data) || data.length === 0) {
-            container.append('div').attr('class', 'no-data-message')
-                .text('No hay datos de tareas para el Scoreboard.');
-            return;
-        }
+        if (!Array.isArray(data) || data.length === 0) {
+            container.append('div').attr('class', 'no-data-message')
+                .text('No hay datos de tareas para el Scoreboard.');
+            return;
+        }
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0); 
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); 
 
-        const scoreboardDataMap = new Map();
-        
-        data.forEach(task => {
-            const userId = String(task.assigned_user_id || 'N/A').trim();
-            if (userId === '') return; 
+        const scoreboardDataMap = new Map();
+        
+        data.forEach(task => {
+            const userId = String(task.assigned_user_id || 'N/A').trim();
+            if (userId === '') return; 
 
-            if (!scoreboardDataMap.has(userId)) {
-                scoreboardDataMap.set(userId, {
-                    user_id: userId,
-                    total_tasks: 0,
-                    completed_tasks: 0,
-                    overdue_tasks: 0
-                });
-            }
+            if (!scoreboardDataMap.has(userId)) {
+                scoreboardDataMap.set(userId, {
+                    user_id: userId,
+                    total_tasks: 0,
+                    completed_tasks: 0,
+                    overdue_tasks: 0
+                });
+            }
 
-            const userStats = scoreboardDataMap.get(userId);
-            const statusKey = getTaskStatus(task);
+            const userStats = scoreboardDataMap.get(userId);
+            const statusKey = getTaskStatus(task);
 
-            if (statusKey !== 'CANCELLED') {
-                userStats.total_tasks += 1;
-            }
+            if (statusKey !== 'CANCELLED') {
+                userStats.total_tasks += 1;
+            }
 
-            if (statusKey === 'COMPLETED') {
-                userStats.completed_tasks += 1;
-            }
+            if (statusKey === 'COMPLETED') {
+                userStats.completed_tasks += 1;
+            }
 
-            if (statusKey !== 'COMPLETED' && statusKey !== 'CANCELLED') {
-                const dueDate = task.end_date || task.due_date;
-                const parsedDate = parseDateFlexible(dueDate);
+            if (statusKey !== 'COMPLETED' && statusKey !== 'CANCELLED') {
+                const dueDate = task.end_date || task.due_date;
+                const parsedDate = parseDateFlexible(dueDate);
 
-                if (parsedDate && parsedDate < today) {
-                    userStats.overdue_tasks += 1;
-                }
-            }
-        });
+                if (parsedDate && parsedDate < today) {
+                    userStats.overdue_tasks += 1;
+                }
+            }
+        });
 
-        const finalData = Array.from(scoreboardDataMap.values())
-            .filter(d => d.total_tasks > 0)
-            .map(d => ({
-                ...d,
-                completion_rate: d.total_tasks > 0 ? (d.completed_tasks / d.total_tasks) * 100 : 0
-            }))
-            .sort((a, b) => {
-                if (b.completion_rate !== a.completion_rate) return b.completion_rate - a.completion_rate;
-                if (a.overdue_tasks !== b.overdue_tasks) return a.overdue_tasks - b.overdue_tasks;
-                return a.user_id.localeCompare(b.user_id);
-            });
+        const finalData = Array.from(scoreboardDataMap.values())
+            .filter(d => d.total_tasks > 0)
+            .map(d => ({
+                ...d,
+                completion_rate: d.total_tasks > 0 ? (d.completed_tasks / d.total_tasks) * 100 : 0
+            }))
+            .sort((a, b) => {
+                if (b.completion_rate !== a.completion_rate) return b.completion_rate - a.completion_rate;
+                if (a.overdue_tasks !== b.overdue_tasks) return a.overdue_tasks - b.overdue_tasks;
+                return a.user_id.localeCompare(b.user_id);
+            });
 
-        if (finalData.length === 0) {
-            container.append('div').attr('class', 'no-data-message')
-                .text('No hay tareas para calcular la eficiencia.');
-            return;
-        }
+        if (finalData.length === 0) {
+            container.append('div').attr('class', 'no-data-message')
+                .text('No hay tareas para calcular la eficiencia.');
+            return;
+        }
 
-        const table = container.append('table').attr('class', 'efficiency-table');
+        const table = container.append('table').attr('class', 'efficiency-table');
 
-        table.append('thead').append('tr')
-            .html(`
-                <th>Recurso (Usuario)</th>
-                <th style="text-align:center;">Tareas Asignadas</th>
-                <th style="text-align:center;">Finalizadas</th>
-                <th style="text-align:center;">Tasa de Finalización</th>
-                <th style="text-align:center;">Tareas Vencidas</th>
-            `);
+        table.append('thead').append('tr')
+            .html(`
+                <th>Recurso (Usuario)</th>
+                <th style="text-align:center;">Tareas Asignadas</th>
+                <th style="text-align:center;">Finalizadas</th>
+                <th style="text-align:center;">Tasa de Finalización</th>
+                <th style="text-align:center;">Tareas Vencidas</th>
+            `);
 
-        const tbody = table.append('tbody');
+        const tbody = table.append('tbody');
 
-        finalData.forEach(d => {
-            const completionRate = d.completion_rate;
-            let rateColor = '#333';
-            if (completionRate === 100) rateColor = statusColors['COMPLETED'];
-            else if (completionRate < 50) rateColor = statusColors['TO_DO'];
-            else if (completionRate >= 50) rateColor = statusColors['IN_PROGRESS'];
-            
-            let overdueColor = '#333';
-            if (d.overdue_tasks > 0) overdueColor = statusColors['TO_DO'];
-            else overdueColor = statusColors['COMPLETED'];
+        finalData.forEach(d => {
+            const completionRate = d.completion_rate;
+            let rateColor = '#333';
+            if (completionRate === 100) rateColor = statusColors['COMPLETED'];
+            else if (completionRate < 50) rateColor = statusColors['TO_DO'];
+            else if (completionRate >= 50) rateColor = statusColors['IN_PROGRESS'];
+            
+            let overdueColor = '#333';
+            if (d.overdue_tasks > 0) overdueColor = statusColors['TO_DO'];
+            else overdueColor = statusColors['COMPLETED'];
 
-            const row = tbody.append('tr');
+            const row = tbody.append('tr');
 
-            row.append('td')
-                .text(`Usuario ${d.user_id === 'N/A' ? 'Sin Asignar' : d.user_id}`)
-                .style('font-weight', 'bold');
-            row.append('td')
-                .text(d.total_tasks)
-                .style('text-align', 'center')
-                .style('font-size', '16px')
-                .style('font-weight', 'bold'); 
-            row.append('td')
-                .text(d.completed_tasks)
-                .style('text-align', 'center')
-                .style('font-size', '16px')
-                .style('font-weight', 'bold');
-            row.append('td')
-                .text(`${completionRate.toFixed(1)}%`)
-                .style('color', rateColor)
-                .style('font-weight', 'bold')
-                .style('font-size', '16px')
-                .style('text-align', 'center');
-            row.append('td')
-                .text(d.overdue_tasks)
-                .style('color', overdueColor)
-                .style('font-weight', 'bold')
-                .style('font-size', '16px')
-                .style('text-align', 'center');
-        });
-    } catch (error) {
-        console.error("Error al calcular y renderizar el Scoreboard de Eficiencia:", error);
-        d3.select('#efficiency-scoreboard').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
-    }
+            row.append('td')
+                .text(`Usuario ${d.user_id === 'N/A' ? 'Sin Asignar' : d.user_id}`)
+                .style('font-weight', 'bold');
+            row.append('td')
+                .text(d.total_tasks)
+                .style('text-align', 'center')
+                .style('font-size', '16px')
+                .style('font-weight', 'bold'); 
+            row.append('td')
+                .text(d.completed_tasks)
+                .style('text-align', 'center')
+                .style('font-size', '16px')
+                .style('font-weight', 'bold');
+            row.append('td')
+                .text(`${completionRate.toFixed(1)}%`)
+                .style('color', rateColor)
+                .style('font-weight', 'bold')
+                .style('font-size', '16px')
+                .style('text-align', 'center');
+            row.append('td')
+                .text(d.overdue_tasks)
+                .style('color', overdueColor)
+                .style('font-weight', 'bold')
+                .style('font-size', '16px')
+                .style('text-align', 'center');
+        });
+    } catch (error) {
+        console.error("Error al calcular y renderizar el Scoreboard de Eficiencia:", error);
+        d3.select('#efficiency-scoreboard').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
+    }
 }
 
 // =======================================================
 // 6. TAREAS PRÓXIMAS - CORREGIDO
 // =======================================================
 function getRelativeDate(date) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(date);
-  target.setHours(0, 0, 0, 0);
-  const diffTime = target.getTime() - today.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  const diffTime = target.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-  if (diffDays === 0) return 'Hoy';
-  if (diffDays === 1) return 'Mañana';
-  if (diffDays > 1 && diffDays <= 7) return `En ${diffDays} días`; 
-  if (diffDays > 7) return 'Más adelante';
-  return 'N/A';
+  if (diffDays === 0) return 'Hoy';
+  if (diffDays === 1) return 'Mañana';
+  if (diffDays > 1 && diffDays <= 7) return `En ${diffDays} días`; 
+  if (diffDays > 7) return 'Más adelante';
+  return 'N/A';
 }
 
 async function renderDailyTasks() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
-    const responseData = await response.json();
-    
-    // CORRECCIÓN: Extraer array 'data' del objeto
-    const data = responseData.data || [];
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
+    const responseData = await response.json();
+    
+    // Extraer array 'data' del objeto
+    const data = responseData.data || [];
 
-    const container = d3.select('#daily-tasks');
-    container.html('');
+    const container = d3.select('#daily-tasks');
+    container.html('');
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    const upcomingTasks = data.filter(task => {
-        const statusKey = getTaskStatus(task);
-        if (statusKey === 'COMPLETED' || statusKey === 'CANCELLED') return false;
+    const upcomingTasks = data.filter(task => {
+        const statusKey = getTaskStatus(task);
+        if (statusKey === 'COMPLETED' || statusKey === 'CANCELLED') return false;
 
-        const dueDate = task.end_date || task.due_date;
-        const parsedDate = parseDateFlexible(dueDate);
+        const dueDate = task.end_date || task.due_date;
+        const parsedDate = parseDateFlexible(dueDate);
 
-        return parsedDate && parsedDate >= today; 
-    });
-    
-    if (upcomingTasks.length === 0) {
-      container.append('div').attr('class', 'no-data-message')
-        .text('No hay tareas próximas pendientes.');
-      return;
-    }
+        return parsedDate && parsedDate >= today; 
+    });
+    
+    if (upcomingTasks.length === 0) {
+      container.append('div').attr('class', 'no-data-message')
+        .text('No hay tareas próximas pendientes.');
+      return;
+    }
 
-    upcomingTasks.sort((a, b) => {
-        const dateA = parseDateFlexible(a.end_date || a.due_date);
-        const dateB = parseDateFlexible(b.end_date || b.due_date);
-        return (dateA?.getTime() || Infinity) - (dateB?.getTime() || Infinity);
-    });
-    
-    const limitedTasks = upcomingTasks.slice(0, 10);
+    upcomingTasks.sort((a, b) => {
+        const dateA = parseDateFlexible(a.end_date || a.due_date);
+        const dateB = parseDateFlexible(b.end_date || b.due_date);
+        return (dateA?.getTime() || Infinity) - (dateB?.getTime() || Infinity);
+    });
+    
+    const limitedTasks = upcomingTasks.slice(0, 10);
 
-    limitedTasks.forEach(task => {
-        const dueDate = parseDateFlexible(task.end_date || task.due_date);
-        const relativeDate = dueDate ? getRelativeDate(dueDate) : 'Sin Fecha';
-        const user = task.assigned_user_id || task.assigned_to || 'N/A';
-        const taskTitle = task.name || task.title || 'Tarea sin nombre';
-        const color = statusColors[getTaskStatus(task)] || '#cccccc';
+    limitedTasks.forEach(task => {
+        const dueDate = parseDateFlexible(task.end_date || task.due_date);
+        const relativeDate = dueDate ? getRelativeDate(dueDate) : 'Sin Fecha';
+        const user = task.assigned_user_id || task.assigned_to || 'N/A';
+        const taskTitle = task.name || task.title || 'Tarea sin nombre';
+        const color = statusColors[getTaskStatus(task)] || '#cccccc';
 
-        container.append('div')
-            .attr('class', `task-item upcoming`)
-            .attr('style', `border-left: 5px solid ${color};`)
-            .html(`
-                <div style="flex-grow: 1;">
-                    <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;">
-                        <i class="fas fa-calendar-check" style="color: ${color};"></i>
-                        <span class="task-title">${taskTitle}</span>
-                    </div>
-                    <div class="user-badge" style="background-color: ${color}; color: white; padding: 2px 6px; border-radius: 4px; display: inline-block; font-size: 11px;">
-                        Usuario ${user}
-                    </div>
-                </div>
-                <div style="text-align:right; margin-left: 10px; min-width: 80px;">
-                    <div class="task-date" style="font-size: 14px; font-weight: bold; color: ${color};">
-                        ${relativeDate}
-                    </div>
-                    <div style="font-size: 12px; color: #666;">
-                        (${dueDate ? dueDate.toLocaleDateString() : 'N/A'})
-                    </div>
-                </div>
-            `);
-    });
+        container.append('div')
+            .attr('class', `task-item upcoming`)
+            .attr('style', `border-left: 5px solid ${color};`)
+            .html(`
+                <div style="flex-grow: 1;">
+                    <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;">
+                        <i class="fas fa-calendar-check" style="color: ${color};"></i>
+                        <span class="task-title">${taskTitle}</span>
+                    </div>
+                    <div class="user-badge" style="background-color: ${color}; color: white; padding: 2px 6px; border-radius: 4px; display: inline-block; font-size: 11px;">
+                        Usuario ${user}
+                    </div>
+                </div>
+                <div style="text-align:right; margin-left: 10px; min-width: 80px;">
+                    <div class="task-date" style="font-size: 14px; font-weight: bold; color: ${color};">
+                        ${relativeDate}
+                    </div>
+                    <div style="font-size: 12px; color: #666;">
+                        (${dueDate ? dueDate.toLocaleDateString() : 'N/A'})
+                    </div>
+                </div>
+            `);
+    });
 
-  } catch (error) {
-    console.error("Error al renderizar tareas próximas:", error);
-    d3.select('#daily-tasks').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
-  }
+  } catch (error) {
+    console.error("Error al renderizar tareas próximas:", error);
+    d3.select('#daily-tasks').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
+  }
 }
 
 // =======================================================
 // 7. MÉTRICAS (KPIs)
 // =======================================================
 async function renderMetrics() {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/metrics`);
-    const data = await response.json();
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/metrics`);
+    const data = await response.json();
 
-    d3.select('#total-tasks').text(data.total_tasks || 0);
-    d3.select('#completed-tasks').text(data.completed_tasks || 0);
-    d3.select('#completion-rate').text(d3.format(".1f")(data.completion_rate || 0) + '%');
-    d3.select('#avg-completion-time').text(typeof data.avg_completion_time === 'number' ? `${data.avg_completion_time.toFixed(1)} días` : 'N/A');
-  } catch (error) {
-    console.error("Error al renderizar métricas:", error);
-    d3.select('#total-tasks').text('N/A');
-    d3.select('#completed-tasks').text('N/A');
-    d3.select('#completion-rate').text('N/A');
-    d3.select('#avg-completion-time').text('N/A');
-  }
+    d3.select('#total-tasks').text(data.total_tasks || 0);
+    d3.select('#completed-tasks').text(data.completed_tasks || 0);
+    d3.select('#completion-rate').text(d3.format(".1f")(data.completion_rate || 0) + '%');
+    d3.select('#avg-completion-time').text(typeof data.avg_completion_time === 'number' ? `${data.avg_completion_time.toFixed(1)} días` : 'N/A');
+  } catch (error) {
+    console.error("Error al renderizar métricas:", error);
+    d3.select('#total-tasks').text('N/A');
+    d3.select('#completed-tasks').text('N/A');
+    d3.select('#completion-rate').text('N/A');
+    d3.select('#avg-completion-time').text('N/A');
+  }
 }
 
 // =======================================================
-// 8. GANTT (con filtros) - CORREGIDO
+// 8. GANTT (con filtros) - COMPLETO
 // =======================================================
 
 /**
- * Obtiene los usuarios únicos del endpoint /api/tasks/gantt y puebla el filtro.
- */
+ * Obtiene los usuarios únicos del endpoint /api/tasks/gantt y puebla el filtro.
+ */
 async function loadGanttFilters() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
-        const responseData = await response.json();
-        
-        // CORRECCIÓN: Extraer array 'data' del objeto
-        const tasks = responseData.data || [];
-        
-        const userIds = new Set();
-        tasks.forEach(task => {
-            const userId = String(task.assigned_user_id || 'N/A').trim();
-            if (userId !== 'N/A' && userId !== '') {
-                userIds.add(userId);
-            }
-        });
-        
-        const sortedUserIds = Array.from(userIds).sort();
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
+        const responseData = await response.json();
+        
+        // Extraer array 'data' del objeto
+        const tasks = responseData.data || [];
+        
+        const userIds = new Set();
+        tasks.forEach(task => {
+            const userId = String(task.assigned_user_id || 'N/A').trim();
+            if (userId !== 'N/A' && userId !== '') {
+                userIds.add(userId);
+            }
+        });
+        
+        const sortedUserIds = Array.from(userIds).sort();
 
-        const userFilterSelect = d3.select('#user-filter');
-        const currentFilterValue = userFilterSelect.node() ? userFilterSelect.node().value : '';
-        
-        userFilterSelect.html('<option value="">Todos los usuarios</option>');
-        userFilterSelect.append('option')
-          .attr('value', 'N/A')
-          .text('Sin Asignar');
+        const userFilterSelect = d3.select('#user-filter');
+        const currentFilterValue = userFilterSelect.node() ? userFilterSelect.node().value : '';
+        
+        userFilterSelect.html('<option value="">Todos los usuarios</option>');
+        userFilterSelect.append('option')
+          .attr('value', 'N/A')
+          .text('Sin Asignar');
 
-        sortedUserIds.forEach(id => {
-            userFilterSelect.append('option')
-                .attr('value', id)
-                .text(`Usuario ${id}`);
-        });
+        sortedUserIds.forEach(id => {
+            userFilterSelect.append('option')
+                .attr('value', id)
+                .text(`Usuario ${id}`);
+        });
 
-        if (currentFilterValue && (sortedUserIds.includes(currentFilterValue) || currentFilterValue === 'N/A')) {
-             userFilterSelect.property('value', currentFilterValue);
-        }
+        if (currentFilterValue && (sortedUserIds.includes(currentFilterValue) || currentFilterValue === 'N/A')) {
+             userFilterSelect.property('value', currentFilterValue);
+        }
 
-    } catch (error) {
-        console.error("Error cargando filtros de usuario desde /api/tasks/gantt:", error);
-    }
+    } catch (error) {
+        console.error("Error cargando filtros de usuario desde /api/tasks/gantt:", error);
+    }
 }
 
-function parseGanttDate(dateString) {
-    if (!dateString) return null;
-    let date = new Date(String(dateString).trim());
-    return isNaN(date.getTime()) ? null : date;
-}
 
 async function renderGanttChart() {
-  try {
-    const statusFilter = document.getElementById('status-filter')?.value || '';
-    const userFilter = document.getElementById('user-filter')?.value || '';
-    
-    const params = new URLSearchParams();
-    if (statusFilter) params.append('status', statusFilter);
-    if (userFilter) params.append('user_id', userFilter);
+  try {
+    const statusFilter = document.getElementById('status-filter')?.value || '';
+    const userFilter = document.getElementById('user-filter')?.value || '';
+    
+    const params = new URLSearchParams();
+    if (statusFilter) params.append('status', statusFilter);
+    if (userFilter) params.append('user_id', userFilter);
 
-    const apiUrl = `${API_BASE_URL}/api/tasks/gantt?${params.toString()}`;
-    const response = await fetch(apiUrl);
-    const responseData = await response.json();
-    
-    // CORRECCIÓN: Extraer array 'data' del objeto
-    const rawData = responseData.data || [];
+    const apiUrl = `${API_BASE_URL}/api/tasks/gantt?${params.toString()}`;
+    const response = await fetch(apiUrl);
+    const responseData = await response.json();
+    
+    // Extraer array 'data' del objeto
+    const rawData = responseData.data || [];
 
-    const container = d3.select('#gantt-chart');
-    container.html('<div id="gantt-diagnostic"></div>');
-    
-    const data = rawData.map(d => {
-        const start = parseGanttDate(d.start_date);
-        const end = parseGanttDate(d.end_date || d.due_date);
-        
-        const userId = String(d.assigned_user_id || 'N/A');
-        const userName = userId === 'N/A' ? 'Sin Asignar' : `Usuario ${userId}`;
-        const taskName = d.name || d.title || 'Tarea sin nombre';
-        
-        let durationDays = 'N/A';
-        if (start && end) {
-            const diffTime = Math.abs(end.getTime() - start.getTime());
-            durationDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-        }
+    const container = d3.select('#gantt-chart');
+    container.html('<div id="gantt-diagnostic"></div>');
+    
+    const data = rawData.map(d => {
+        const start = parseGanttDate(d.start_date);
+        const end = parseGanttDate(d.end_date || d.due_date);
+        
+        const userId = String(d.assigned_user_id || 'N/A');
+        const userName = userId === 'N/A' ? 'Sin Asignar' : `Usuario ${userId}`;
+        const taskName = d.name || d.title || 'Tarea sin nombre';
+        
+        let durationDays = 'N/A';
+        if (start && end) {
+            const diffTime = Math.abs(end.getTime() - start.getTime());
+            durationDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        }
 
-        return {
-            ...d,
-            start: start,
-            end: end,
-            task_id: String(d._id || d.id || d.task_id || Math.random()),
-            user_id: userId,
-            task_name: taskName,
-            task_label: `${taskName} [${userName}]`,
-            duration_days: durationDays 
-        };
-    }).filter(d => d.start && d.end && d.start < d.end);
+        return {
+            ...d,
+            start: start,
+            end: end,
+            task_id: String(d._id || d.id || d.task_id || Math.random()),
+            user_id: userId,
+            task_name: taskName,
+            task_label: `${taskName} [${userName}]`,
+            duration_days: durationDays 
+        };
+    }).filter(d => d.start && d.end && d.start <= d.end); // Corregido: start <= end
 
-    if (data.length === 0) { 
-      container.append('div').attr('class', 'no-data-message')
-        .text('No hay tareas con fechas de inicio y fin válidas para los filtros seleccionados.');
-      return;
-    }
+    if (data.length === 0) { 
+      container.append('div').attr('class', 'no-data-message')
+        .text('No hay tareas para mostrar en el Gráfico de Gantt con los filtros actuales.');
+      return;
+    }
 
-    const margin = { top: 25, right: 30, bottom: 60, left: 300 }; 
-    const parentWidth = container.node().parentElement.clientWidth || 1400;
-    const width = Math.max(parentWidth - margin.left - margin.right, 1200);
-    const height = Math.max(data.length * 45, 400);
+    // --- 2. Preparación y Configuración D3 ---
+    
+    // Agrupar y ordenar por usuario para el eje Y
+    const groupedData = d3.group(data, d => d.user_id);
+    const users = Array.from(groupedData.keys()).sort();
+    const orderedTasks = [];
+    users.forEach(user => {
+        // Ordenar tareas dentro de cada usuario por fecha de inicio
+        const tasks = groupedData.get(user).sort((a, b) => a.start - b.start);
+        tasks.forEach(task => orderedTasks.push(task));
+    });
 
-    d3.select('#gantt-chart').select('svg').remove();
-    
-    const svg = container.append('svg')
-      .attr('width', width + margin.left + margin.right)
-      .attr('height', height + margin.top + margin.bottom)
-      .append('g')
-      .attr('transform', `translate(${margin.left}, ${margin.top})`);
+    // Definir dimensiones
+    const margin = { top: 20, right: 20, bottom: 60, left: 150 }; // Aumento el bottom para el eje X
+    const containerWidth = container.node().clientWidth || 800;
+    const barHeight = 25;
+    const rowHeight = barHeight + 5;
+    const totalHeight = orderedTasks.length * rowHeight;
+    const height = Math.max(totalHeight, 200);
+    const width = containerWidth - margin.left - margin.right;
+    
+    // Calcular dominio del tiempo (eje X)
+    const minDate = d3.min(data, d => d.start);
+    const maxDate = d3.max(data, d => d.end);
+    const domainStart = d3.timeDay.offset(minDate, -5); // Espacio antes del inicio
+    const domainEnd = d3.timeDay.offset(maxDate, 5);    // Espacio después del fin
 
-    const dateRange = [d3.min(data, d => d.start), d3.max(data, d => d.end)];
-    let datePadding = 2, tickFormat = d3.timeFormat("%a %d"), tickCount = Math.ceil(width / 70);
+    // Escala de tiempo (X)
+    const xScale = d3.scaleTime()
+        .domain([domainStart, domainEnd])
+        .range([0, width]);
 
-    switch (ganttZoomLevel) {
-        case 'weeks':
-            datePadding = 14;
-            tickFormat = d3.timeFormat("Sem %U\n%b %d");
-            tickCount = Math.ceil(width / 100);
-            break;
-        case 'months':
-            datePadding = 60;
-            tickFormat = d3.timeFormat("%b %Y");
-            tickCount = Math.ceil(width / 120);
-            break;
-        default:
-            datePadding = 2;
-            tickFormat = d3.timeFormat("%a %d");
-            tickCount = Math.ceil(width / 70);
-    }
-    
-    dateRange[0] = d3.timeDay.offset(d3.timeDay.floor(dateRange[0]), -datePadding);
-    dateRange[1] = d3.timeDay.offset(d3.timeDay.ceil(dateRange[1]), datePadding);
-    
-    const x = d3.scaleTime().domain(dateRange).range([0, width]);
-    const y = d3.scaleBand().domain(data.map(d => d.task_label)).range([0, height]).padding(0.2);
-    
-    const barColor = status => statusColors[String(status).toUpperCase()] || '#cccccc';
+    // Escala de banda (Y) para las tareas
+    const yScale = d3.scaleBand()
+        .domain(orderedTasks.map(d => d.task_id))
+        .range([0, height])
+        .padding(0.1);
 
-    svg.selectAll('.task-bar')
-      .data(data)
-      .enter().append('rect')
-      .attr('class', 'task-bar')
-      .attr('y', d => y(d.task_label))
-      .attr('height', y.bandwidth())
-      .attr('x', d => Math.max(0, x(d.start)))
-      .attr('width', d => {
-        const startX = Math.max(0, x(d.start));
-        const endX = x(d.end);
-        return Math.max(0, endX - startX);
-      })
-      .attr('fill', d => barColor(getTaskStatus(d))) 
-      .on('mouseover', function (event, d) {
-        d3.select('#tooltip')
-          .style('opacity', 1)
-          .html(`
-            <strong>${d.task_name}</strong><br>
-            Usuario: ${d.user_id === 'N/A' ? 'Sin Asignar' : d.user_id}<br>
-            Estado: ${String(getTaskStatus(d)).replace('_', ' ')}<br>
-            Inicio: ${d.start ? d3.timeFormat("%d/%b")(d.start) : 'N/A'}<br>
-            Fin: ${d.end ? d3.timeFormat("%d/%b")(d.end) : 'N/A'}<br>
-            <strong>Duración: ${d.duration_days} días</strong>
-          `) 
-          .style('left', (event.pageX + 10) + 'px')
-          .style('top', (event.pageY - 28) + 'px');
-      })
-      .on('mouseout', function () {
-        d3.select('#tooltip').style('opacity', 0);
-      });
+    // --- 3. Renderizado SVG ---
+    
+    const svg = container.append('svg')
+        .attr('width', width + margin.left + margin.right)
+        .attr('height', height + margin.top + margin.bottom)
+        .append('g')
+        .attr('transform', `translate(${margin.left}, ${margin.top})`);
+        
+    // --- 4. Eje X (Temporal) ---
+    const xAxis = d3.axisBottom(xScale);
+    
+    if (ganttZoomLevel === 'weeks') {
+        xAxis.ticks(d3.timeWeek.every(1)).tickFormat(d3.timeFormat("%b %d"));
+    } else if (ganttZoomLevel === 'months') {
+        xAxis.ticks(d3.timeMonth.every(1)).tickFormat(d3.timeFormat("%b %Y"));
+    } else { // 'days' por defecto
+        xAxis.ticks(d3.timeDay.every(1)).tickFormat(d3.timeFormat("%d/%m"));
+    }
 
-    svg.selectAll('.task-label-inside')
-      .data(data)
-      .enter().append('text')
-      .attr('class', 'task-label-inside')
-      .attr('x', d => {
-        const barStart = Math.max(0, x(d.start));
-        return barStart + 5;
-      })
-      .attr('y', d => y(d.task_label) + y.bandwidth() / 2)
-      .attr('dy', '.35em') 
-      .text(d => d.task_name)
-      .attr('fill', '#ffffff') 
-      .style('font-size', '12px')
-      .style('font-weight', 'bold')
-      .style('pointer-events', 'none') 
-      .style('display', d => {
-        const barStart = Math.max(0, x(d.start));
-        const barEnd = x(d.end);
-        const barWidth = Math.max(0, barEnd - barStart);
-        return barWidth > 120 ? null : 'none'; 
-      });
+    svg.append('g')
+        .attr('class', 'x axis')
+        .attr('transform', `translate(0, ${height})`)
+        .call(xAxis)
+        .selectAll("text") 
+            .style("text-anchor", "end")
+            .attr("dx", "-.8em")
+            .attr("dy", ".15em")
+            .attr("transform", "rotate(-65)");
 
-    svg.append('g')
-      .attr('class', 'x-axis')
-      .attr('transform', `translate(0, ${height})`)
-      .call(d3.axisBottom(x).ticks(tickCount).tickFormat(tickFormat))
-      .selectAll("text")
-      .style("text-anchor", "end")
-      .attr("dx", "-.8em")
-      .attr("dy", ".15em")
-      .attr("transform", "rotate(-65)");
+    // --- 5. Barras de Gantt y Etiquetas ---
+    
+    const tasks = svg.selectAll('.task')
+        .data(orderedTasks)
+        .enter().append('g')
+        .attr('class', 'task')
+        .attr('transform', d => `translate(0, ${yScale(d.task_id)})`);
 
-    svg.append('g')
-      .attr('class', 'y-axis')
-      .call(d3.axisLeft(y).tickFormat(d => d));
+    // Dibujar las barras
+    tasks.append('rect')
+        .attr('class', 'gantt-bar')
+        .attr('x', d => xScale(d.start))
+        .attr('width', d => Math.max(0, xScale(d.end) - xScale(d.start))) // Usar Math.max para evitar ancho negativo/error
+        .attr('height', yScale.bandwidth())
+        .style('fill', d => statusColors[getTaskStatus(d)] || '#cccccc')
+        .on('mouseover', function (event, d) {
+            d3.select('#tooltip')
+                .style('opacity', 1)
+                .html(`<strong>${d.task_name}</strong><br>Asignado: ${d.user_id === 'N/A' ? 'Sin Asignar' : `Usuario ${d.user_id}`}<br>Inicio: ${d.start.toLocaleDateString()}<br>Fin: ${d.end.toLocaleDateString()}<br>Estado: ${getTaskStatus(d)}`)
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY - 28) + 'px');
+        })
+        .on('mouseout', function () {
+            d3.select('#tooltip').style('opacity', 0);
+        });
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Etiquetas de las barras (Nombre de la tarea)
+    tasks.append('text')
+        .attr('class', 'gantt-label')
+        .attr('x', d => xScale(d.start) + 5) // 5px de padding desde el inicio de la barra
+        .attr('y', yScale.bandwidth() / 2)
+        .attr('dy', '.35em')
+        .text(d => d.task_name)
+        .style('fill', 'white') // Texto blanco sobre la barra de color
+        .style('font-size', '10px');
+        
+    // Eje Y (Etiquetas de Tarea y Usuario)
+    svg.selectAll('.task-label-y')
+        .data(orderedTasks)
+        .enter().append('text')
+        .attr('class', 'task-label-y')
+        .attr('x', -5) 
+        .attr('y', d => yScale(d.task_id) + yScale.bandwidth() / 2)
+        .attr('dy', '.35em')
+        .style('text-anchor', 'end')
+        .text(d => d.task_label.substring(0, 35)) // Limitar longitud
+        .style('font-size', '12px');
 
-    if (x.domain()[0] <= today && x.domain()[1] >= today) {
-      const todayX = x(today);
-      const todayFormatted = d3.timeFormat("%d %b")(today);
-
-      svg.append('line')
-        .attr('class', 'today-line')
-        .attr('x1', todayX)
-        .attr('x2', todayX)
-        .attr('y1', 0)
-        .attr('y2', height)
-        .style('stroke', '#ff0ac4') 
-        .style('stroke-width', '2px')
-        .style('stroke-dasharray', '4');
-        
-      svg.append('text')
-        .attr('class', 'today-text-label')
-        .attr('x', todayX - 5)
-        .attr('y', -5) 
-        .attr('text-anchor', 'end')
-        .text('HOY')
-        .style('fill', '#ff0ac4')
-        .style('font-weight', 'bold')
-        .style('font-size', '16px'); 
-
-      svg.append('text')
-        .attr('class', 'today-text-date')
-        .attr('x', todayX + 5)
-        .attr('y', -5) 
-        .attr('text-anchor', 'start')
-        .text(todayFormatted)
-        .style('fill', '#ff0ac4')
-        .style('font-weight', 'bold') 
-        .style('font-size', '16px'); 
-    }
-
-    const errors = data.filter(d => getTaskStatus(d) !== 'COMPLETED' && d.end < today);
-
-    if (errors.length > 0) {
-      d3.select('#gantt-diagnostic').html(`<i class="fas fa-exclamation-triangle" style="color: ${statusColors['TO_DO']};"></i> <strong>${errors.length} tareas</strong> vencidas y no completadas.`);
-    } else {
-      d3.select('#gantt-diagnostic').html(`<i class="fas fa-check-circle" style="color: ${statusColors['COMPLETED']};"></i> No hay tareas vencidas en esta vista.`);
-    }
-
-    setTimeout(() => {
-      const svgWidth = svg.node().parentElement.getBoundingClientRect().width;
-      const containerWidthParent = container.node().parentElement.clientWidth;
-      if (svgWidth > containerWidthParent) container.style('overflow-x', 'auto');
-    }, 50);
-
-  } catch (error) {
-    console.error("Error al renderizar el Gantt:", error);
-    d3.select('#gantt-chart').html(`<div class="error-message">Error cargando el diagrama de Gantt. Mensaje: ${error.message}</div>`);
-  }
+    // --- 6. Indicador de "Hoy" ---
+    const todayLine = xScale(new Date());
+    if (todayLine >= 0 && todayLine <= width) {
+         svg.append("line")
+            .attr("class", "today-line")
+            .attr("x1", todayLine)
+            .attr("x2", todayLine)
+            .attr("y1", 0)
+            .attr("y2", height)
+            .style("stroke", "red")
+            .style("stroke-width", 2)
+            .style("stroke-dasharray", "4,4");
+    }
+    
+    // Habilitar scroll horizontal si es necesario
+    setTimeout(() => {
+      const svgWidth = svg.node().parentElement.getBoundingClientRect().width;
+      const containerWidthParent = container.node().parentElement.clientWidth;
+      if (svgWidth > containerWidthParent) container.style('overflow-x', 'auto');
+    }, 50);
+    
+  } catch (error) {
+    console.error("Error al renderizar el Gráfico de Gantt:", error);
+    d3.select('#gantt-chart').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
+  }
 }
 
-// =======================================================
-// 9. EVENTO INICIAL Y REFRESH
-// =======================================================
 
-function loadAllData() {
-    const loadingDiv = document.getElementById('loading-message');
-    if (loadingDiv) loadingDiv.style.display = 'block';
+// =======================================================
+// 9. CARGA DE DATOS INICIAL
+// =======================================================
+function updateLastUpdateTime() {
+    lastUpdateTime = new Date();
+    const timeString = lastUpdateTime.toLocaleTimeString();
+    d3.select('#last-update-time').text(timeString);
+}
 
-    const tasks = [
-      renderMetrics(),
-      renderProjectStatus(),
-      renderWorkloadChart(),
-      renderOverdueTasks(),
-      calculateAndRenderEfficiencyScoreboard(), 
-      renderDailyTasks(),
-      loadGanttFilters().then(() => renderGanttChart())
-    ];
-    
-    return Promise.all(tasks).finally(() => {
-      const loadingDiv = document.getElementById('loading-message');
-      lastUpdateTime = new Date();
-      d3.select('#last-update-time').text(lastUpdateTime.toLocaleTimeString());
-      if (loadingDiv) loadingDiv.style.display = 'none';
-    });
+async function loadAllData() {
+    console.log("Cargando todos los datos del dashboard...");
+    // Renderizado simultáneo (optimización)
+    await Promise.all([
+      renderMetrics(),
+      renderProjectStatus(),
+      renderWorkloadChart(),
+      renderOverdueTasks(),
+      calculateAndRenderEfficiencyScoreboard(),
+      renderDailyTasks(),
+      loadGanttFilters()
+    ]);
+    // El Gantt se renderiza al final, ya que depende de los filtros cargados
+    renderGanttChart(); 
+    updateLastUpdateTime();
+    console.log("✅ Carga de datos inicial completa.");
 }
 
 // Inicialización
 document.addEventListener('DOMContentLoaded', () => {
-    if (!document.getElementById('tooltip')) {
-        d3.select('body').append('div')
-            .attr('id', 'tooltip')
-            .attr('class', 'tooltip')
-            .style('position', 'absolute')
-            .style('opacity', 0)
-            .style('background-color', 'rgba(255, 255, 255, 0.95)')
-            .style('border', '1px solid #ddd')
-            .style('padding', '8px')
-            .style('border-radius', '4px')
-            .style('pointer-events', 'none')
-            .style('z-index', 99999); 
-    }
-
-    const ingestBtn = document.getElementById('ingest-csv-btn');
-    if (ingestBtn) {
-        ingestBtn.addEventListener('click', handleIngestCsv);
-    }
-
-    const statusFilter = document.getElementById('status-filter');
-    if (statusFilter) statusFilter.addEventListener('change', renderGanttChart);
-
-    const userFilter = document.getElementById('user-filter');
-    if (userFilter) userFilter.addEventListener('change', renderGanttChart);
-    
-    const refreshBtn = document.getElementById('refresh-btn');
-    if (refreshBtn) refreshBtn.addEventListener('click', () => { if (typeof loadAllData === 'function') loadAllData(); });
-    
-    zoomGantt(ganttZoomLevel);
-    loadAllData();
+    loadAllData();
+    // Añadir eventos a los botones de zoom si no están en el HTML
+    d3.select('#gantt-zoom-days').on('click', () => zoomGantt('days'));
+    d3.select('#gantt-zoom-weeks').on('click', () => zoomGantt('weeks'));
+    d3.select('#gantt-zoom-months').on('click', () => zoomGantt('months'));
+    
+    // Añadir eventos a los selectores de filtro para que refresquen el Gantt
+    d3.select('#status-filter').on('change', renderGanttChart);
+    d3.select('#user-filter').on('change', renderGanttChart);
+    
+    // Exponer la función handleIngestCsv si el botón existe
+    const ingestButton = document.getElementById('ingest-csv-button');
+    if (ingestButton) {
+        ingestButton.addEventListener('click', handleIngestCsv);
+    }
 });
