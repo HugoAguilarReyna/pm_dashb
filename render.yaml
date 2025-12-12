@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: dashboard-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MONGO_ATLAS_URI
+        sync: false
+      - key: DB_NAME
+        value: project_dashboard
