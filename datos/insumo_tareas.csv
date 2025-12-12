@@ -1,23 +1,23 @@
-task_id,project_id,assigned_user_id,task_description,status,is_milestone,due_date,effort_points,actual_completion_date,user_roles,start_date,dependencies,tags
-T001,PRJ-001,USR-001,"Diseñar arquitectura de base de datos",COMPLETED,1,15/01/2026,13,08/12/2025,Senior Dev,09/12/2025,,Arquitectura
-T002,PRJ-001,USR-002,"Implementar API de autenticación",IN_PROGRESS,0,20/01/2026,8,,Senior Dev,01/11/2025,T001,"Backend"
-T003,PRJ-001,USR-003,"Crear interfaz de dashboard principal",TO_DO,0,01/12/2025,5,,UI Designer,02/10/2025,,VENCIDA
-T004,PRJ-001,USR-004,"Configurar servidor MongoDB",COMPLETED,1,10/01/2026,3,08/12/2025,DevOps,03/09/2025,,Infraestructura
-T005,PRJ-001,USR-001,"Implementar endpoints del proyecto",IN_PROGRESS,1,25/01/2026,13,,Senior Dev,04/08/2025,T002,"Backend"
-T006,PRJ-001,USR-002,"Desarrollar módulo de reportes",BLOCKED,0,15/01/2026,8,,Senior Dev,05/07/2025,T001,"Backend"
-T007,PRJ-001,USR-003,"Diseñar componentes reutilizables",TO_DO,0,05/12/2025,5,,UI Designer,06/06/2025,T003,VENCIDA
-T008,PRJ-001,USR-004,"Configurar pipeline CI/CD",COMPLETED,0,12/01/2026,5,08/12/2025,DevOps,07/05/2025,T004,"Infraestructura"
-T009,PRJ-002,USR-005,"Análisis de requisitos del cliente",COMPLETED,1,08/01/2026,3,08/12/2025,BA,08/04/2025,,Análisis
-T010,PRJ-002,USR-001,"Prototipo de funcionalidad clave",IN_PROGRESS,0,30/01/2026,13,,Senior Dev,09/03/2025,T009,Prototipo
-T011,PRJ-002,USR-005,"Revisión final de código",TO_DO,0,15/02/2026,8,,BA,20/02/2025,T010,Quality
-T012,PRJ-003,USR-004,"Pruebas de Carga del Sistema",COMPLETED,0,28/02/2026,13,28/02/2026,DevOps,14/02/2025,T011,Pruebas
-T013,PRJ-003,USR-002,"Documentación de la API",IN_PROGRESS,0,30/03/2026,8,,Senior Dev,09/12/2025,T012,Docs
-T014,PRJ-003,USR-001,"Integración de Pasarela de Pago",TO_DO,1,25/04/2026,21,,Senior Dev,09/12/2025,T013,"Frontend, Backend"
-T015,PRJ-003,USR-003,"Lanzamiento Beta del Módulo X",COMPLETED,1,20/05/2026,5,20/05/2026,UI Designer,09/12/2025,T014,Release
-T016,PRJ-004,USR-004,"Mantenimiento y Optimización de DB",IN_PROGRESS,0,15/06/2026,8,,DevOps,09/12/2025,T015,Infraestructura
-T017,PRJ-004,USR-005,"Entrenamiento de Usuarios Finales",TO_DO,0,10/07/2026,5,,BA,09/12/2025,,Capacitación
-T018,PRJ-004,USR-002,"Auditoría de Seguridad",BLOCKED,0,05/08/2026,13,,Senior Dev,09/12/2025,T017,Seguridad
-T019,PRJ-004,USR-001,"Desarrollo de Nueva Característica Y",IN_PROGRESS,1,01/09/2026,21,,Senior Dev,09/12/2025,T018,Feature
-T020,PRJ-005,USR-003,"Diseño UX/UI para V2",TO_DO,0,25/10/2026,8,,UI Designer,09/12/2025,T019,Diseño
-T021,PRJ-005,USR-004,"Despliegue en Producción (Milestone)",IN_PROGRESS,1,15/11/2026,13,,DevOps,09/12/2025,T020,"Infraestructura, Release"
-T022,PRJ-005,USR-005,"Revisión Anual del Proyecto",TO_DO,0,10/12/2026,3,,BA,09/12/2025,T021,Gestión
+task_id,project_id,assigned_user_id,task_description,status,is_milestone,due_date,effort_points,actual_completion_date,user_role,start_date,dependencies,tags
+T001,PRJ-001,USR-001,Diseñar arquitectura de base de datos,COMPLETED,1,15/01/2026,13,08/12/2025,Senior Dev,09/12/2025,,Arquitectura
+T002,PRJ-001,USR-002,Implementar API de autenticación,IN_PROGRESS,0,20/01/2026,8,,Senior Dev,01/11/2025,T001,Backend
+T003,PRJ-001,USR-003,Crear interfaz de dashboard principal,TO_DO,0,01/12/2025,5,,UI Designer,02/10/2025,,VENCIDA
+T004,PRJ-001,USR-004,Configurar servidor MongoDB,COMPLETED,1,10/01/2026,3,08/12/2025,DevOps,03/09/2025,,Infraestructura
+T005,PRJ-001,USR-001,Implementar endpoints del proyecto,IN_PROGRESS,1,25/01/2026,13,,Senior Dev,04/08/2025,T002,Backend
+T006,PRJ-001,USR-002,Desarrollar módulo de reportes,BLOCKED,0,15/01/2026,8,,Senior Dev,05/07/2025,T001,Backend
+T007,PRJ-001,USR-003,Diseñar componentes reutilizables,TO_DO,0,05/12/2025,5,,UI Designer,06/06/2025,T003,VENCIDA
+T008,PRJ-001,USR-004,Configurar pipeline CI/CD,COMPLETED,0,12/01/2026,5,08/12/2025,DevOps,07/05/2025,T004,Infraestructura
+T009,PRJ-002,USR-005,Análisis de requisitos del cliente,COMPLETED,1,08/01/2026,3,08/12/2025,BA,08/04/2025,,Análisis
+T010,PRJ-002,USR-001,Prototipo de funcionalidad clave,IN_PROGRESS,0,30/01/2026,13,,Senior Dev,09/03/2025,T009,Prototipo
+T011,PRJ-002,USR-005,Revisión final de código,TO_DO,0,15/02/2026,8,,BA,20/02/2025,T010,Quality
+T012,PRJ-003,USR-004,Pruebas de Carga del Sistema,COMPLETED,0,28/02/2026,13,28/02/2026,DevOps,14/02/2025,T011,Pruebas
+T013,PRJ-003,USR-002,Documentación de la API,IN_PROGRESS,0,30/03/2026,8,,Senior Dev,09/12/2025,T012,Docs
+T014,PRJ-003,USR-001,Integración de Pasarela de Pago,TO_DO,1,25/04/2026,21,,Senior Dev,09/12/2025,T013,"Frontend, Backend"
+T015,PRJ-003,USR-003,Lanzamiento Beta del Módulo X,COMPLETED,1,20/05/2026,5,20/05/2026,UI Designer,09/12/2025,T014,Release
+T016,PRJ-004,USR-004,Mantenimiento y Optimización de DB,IN_PROGRESS,0,15/06/2026,8,,DevOps,09/12/2025,T015,Infraestructura
+T017,PRJ-004,USR-005,Entrenamiento de Usuarios Finales,TO_DO,0,10/07/2026,5,,BA,09/12/2025,,Capacitación
+T018,PRJ-004,USR-002,Auditoría de Seguridad,BLOCKED,0,05/08/2026,13,,Senior Dev,09/12/2025,T017,Seguridad
+T019,PRJ-004,USR-001,Desarrollo de Nueva Característica Y,IN_PROGRESS,1,01/09/2026,21,,Senior Dev,09/12/2025,T018,Feature
+T020,PRJ-005,USR-003,Diseño UX/UI para V2,TO_DO,0,25/10/2026,8,,UI Designer,09/12/2025,T019,Diseño
+T021,PRJ-005,USR-004,Despliegue en Producción (Milestone),IN_PROGRESS,1,15/11/2026,13,,DevOps,09/12/2025,T020,"Infraestructura, Release"
+T022,PRJ-005,USR-005,Revisión Anual del Proyecto,TO_DO,0,10/12/2026,3,,BA,09/12/2025,T021,Gestión
