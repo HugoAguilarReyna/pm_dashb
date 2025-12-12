@@ -915,8 +915,12 @@ async def get_efficiency_scoreboard():
         # Usar datos de workload
         workload_data = await get_workload_data()
         
+        # El endpoint get_workload_data maneja sus propios errores
+        # y devuelve una lista vacía o HTTPException (que ya es manejada por FastAPI)
+        
+        # Si el resultado es un diccionario (y tiene 'detail', podría ser un error 503 HTTP)
         if isinstance(workload_data, dict) and "detail" in workload_data:
-            # Hubo un error, devolver vacío
+            logger.warning("Workload data regresó un error. Devolviendo lista vacía.")
             return parse_json([])
         
         # Ordenar por tasa de finalización descendente
@@ -925,4 +929,9 @@ async def get_efficiency_scoreboard():
             
             return parse_json(workload_data)
         else:
-            return parse_json([]) # Fin de la función
+            # Si no es lista ni dict-error, algo raro pasó.
+            return parse_json([]) 
+            
+    except Exception as e: # <--- BLOQUE 'EXCEPT' AGREGADO PARA CERRAR EL 'TRY'
+        logger.error(f"Error en get_efficiency_scoreboard: {e}")
+        return parse_json([])
