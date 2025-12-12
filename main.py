@@ -21,10 +21,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Conexión MongoDB ---
-mongo_uri = os.getenv("MONGO_URI") or "mongodb://localhost:27017/"
-client = MongoClient(mongo_uri)
-db = client["project_dashboard"]
+# --- Conexión MongoDB Corregida ---
+# Buscamos MONGO_ATLAS_URI, MONGO_URI, o caemos al valor local.
+mongo_uri = os.getenv("MONGO_ATLAS_URI") or os.getenv("MONGO_URI")
+# Buscamos DB_NAME o usamos el valor por defecto si no está configurado.
+db_name = os.getenv("DB_NAME") or "project_dashboard"
+
+# Fallback para desarrollo local
+if not mongo_uri:
+    mongo_uri = "mongodb://localhost:27017/"
+
+# Inicialización de la conexión
+client = None
+db = None
+try:
+    client = MongoClient(mongo_uri)
+    db = client[db_name] 
+    
+    # Comprobación de conexión (opcional, pero buena práctica)
+    client.admin.command('ping')
+    print(f"Conexión exitosa a MongoDB. Base de Datos: {db_name}")
+
+except Exception as e:
+    print(f"--- ERROR CRÍTICO DE CONEXIÓN A MONGO ---")
+    print(f"URI usada: {mongo_uri}. DB: {db_name}")
+    print(f"Error: {e}")
+    # Lanzamos una excepción para detener la aplicación si la DB es vital
+    raise HTTPException(status_code=500, detail=f"Fallo al conectar con la base de datos: {e}")
+
 
 # --- Funciones Auxiliares ---
 def parse_json(data):
@@ -38,319 +62,223 @@ def safe_date_parse(date_value):
     Convierte un valor a datetime naive (sin tz).
     Soporta múltiples formatos: DD/MM/YYYY, DD/MM/YYYY HH:MM:SS, YYYY-MM-DD, YYYY-MM-DD HH:MM:SS.
     """
-    if not date_value or str(date_value).strip().lower() in {"", "nan", "none", "nat"}:
+    if not date_value or str(date_value).lower() in ['nan', 'nat', 'none']:
         return None
-
-    s = str(date_value).strip()
-
-    for fmt in ["%d/%m/%Y", "%d/%m/%Y %H:%M:%S", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S"]:
+    
+    date_str = str(date_value).split('.')[0] # Remueve milisegundos si vienen de numpy
+    
+    formats = [
+        '%d/%m/%Y', '%d/%m/%Y %H:%M:%S', 
+        '%Y-%m-%d', '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%d %H:%M:%S%z', # con timezone (lo convertiremos a naive)
+    ]
+    
+    for fmt in formats:
         try:
-            return datetime.strptime(s, fmt)
+            dt = datetime.strptime(date_str, fmt)
+            # Asegurar que sea naive (sin zona horaria)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
         except ValueError:
             continue
-
-    # Fallback con pandas
+            
     try:
-        dt = pd.to_datetime(s, errors="coerce", dayfirst=True)
-        if pd.notnull(dt):
-            return dt.to_pydatetime().replace(tzinfo=None)
+        # Intenta parsear como fecha ISO que pandas puede producir
+        dt = pd.to_datetime(date_value, errors='coerce')
+        if pd.notna(dt):
+            # Convertir a datetime de Python y hacerlo naive
+            if dt.tzinfo is not None:
+                dt = dt.tz_convert(None) # Remueve timezone si existe
+            return dt.to_pydatetime()
     except Exception:
         pass
 
+    print(f"Advertencia: No se pudo parsear la fecha/hora: {date_value}")
     return None
 
+def is_date_valid(date_value):
+    """Verifica si la fecha es un objeto datetime."""
+    return isinstance(date_value, datetime)
+
+
 # =======================================================
-# 🚀 ENDPOINT DE INGESTA DE CSV
+# 📎 CARGA DE DATOS (CSV)
 # =======================================================
-@app.post("/api/ingest/tasks")
-async def ingest_tasks_from_csv(file: UploadFile = File(...)):
-    if file.content_type not in ['text/csv', 'application/vnd.ms-excel', 'application/octet-stream']:
-        raise HTTPException(status_code=400, detail="Tipo de archivo no válido. Se espera CSV.")
+@app.post("/api/ingest-csv")
+async def ingest_csv_data(file: UploadFile = File(...)):
+    if not db:
+        raise HTTPException(status_code=503, detail="Servicio de base de datos no disponible.")
+        
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Solo se permiten archivos CSV.")
 
     try:
-        contents = await file.read()
-        csv_data = io.StringIO(contents.decode("utf-8", errors="ignore"))
-
-        dtype_map = {
-            "task_id": str, "project_id": str, "assigned_user_id": str,
-            "task_description": str, "status": str, "is_milestone": str,
-            "due_date": str, "actual_completion_date": str, "user_role": str,
-            "start_date": str, "dependencies": str, "tags": str, "priority": str,
-            "effort_points": str
-        }
-        df = pd.read_csv(csv_data, dtype=dtype_map)
-
-        df.columns = df.columns.str.lower().str.replace(' ', '_').str.strip()
-
-        if 'start_date' not in df.columns or 'due_date' not in df.columns:
-            raise ValueError(f"Columnas 'start_date' o 'due_date' no encontradas. Encabezados: {list(df.columns)}")
-
-        db.tasks.delete_many({})
-        db.resources.delete_many({})
-
-        tasks_inserted = 0
-        resources_inserted = set()
-
-        for index, row in df.iterrows():
-            created_at = datetime.now().replace(tzinfo=None)
-
-            # Depuración: valores crudos
-            # print(f"[DEBUG] Fila {index}: start_date={row.get('start_date')} | due_date={row.get('due_date')} | actual_completion_date={row.get('actual_completion_date')}")
-
-            task_doc = {
-                "task_id": str(row.get("task_id", f"task_{index}")),
-                "project_id": str(row.get("project_id", "N/A")),
-                "title": str(row.get("task_description", f"Tarea {index}")),
-                "description": str(row.get("task_description", "")),
-                "status": to_upper(row.get("status", "PENDING")),
-                "is_milestone": str(row.get("is_milestone", "0")).strip() == "1",
-                "assigned_to": str(row.get("assigned_user_id", "")),
-                "priority": str(row.get("priority", "medium")).lower(),
-                "user_role": str(row.get("user_role", "team_member")),
-                "dependencies": [dep.strip() for dep in str(row.get("dependencies", "")).split(",") if dep.strip()],
-                "tags": [tag.strip() for tag in str(row.get("tags", "")).split(",") if tag.strip()],
-                "created_at": created_at,
-
-                # 🔎 Guarda también los valores crudos
-                "raw_start_date": row.get("start_date"),
-                "raw_due_date": row.get("due_date"),
-                "raw_actual_completion_date": row.get("actual_completion_date"),
-            }
-
-            # Parseo seguro
-            sd = safe_date_parse(row.get("start_date"))
-            dd = safe_date_parse(row.get("due_date"))
-            acd = safe_date_parse(row.get("actual_completion_date"))
-
-            task_doc["start_date"] = sd or created_at
-            if dd:
-                task_doc["due_date"] = dd
-            if acd:
-                task_doc["actual_completion_date"] = acd
-
-            ep_raw = row.get("effort_points")
-            if ep_raw is not None and str(ep_raw).strip():
-                try:
-                    task_doc["effort_points"] = int(float(str(ep_raw).replace(",", ".")))
-                except Exception:
-                    task_doc["effort_points"] = 0
-
-            db.tasks.update_one({"task_id": task_doc["task_id"]}, {"$set": task_doc}, upsert=True)
-            tasks_inserted += 1
-
-            if row.get("assigned_user_id"):
-                user_id = str(row["assigned_user_id"])
-                if user_id not in resources_inserted:
-                    resource_doc = {
-                        "user_id": user_id,
-                        "role": str(row.get("user_role", "team_member")),
-                        "updated_at": datetime.now().replace(tzinfo=None)
-                    }
-                    db.resources.update_one({"user_id": user_id}, {"$set": resource_doc}, upsert=True)
-                    resources_inserted.add(user_id)
-
-        return parse_json({
-            "status": "success",
-            "message": f"Ingesta completada. {tasks_inserted} tareas cargadas.",
-            "inserted_count": tasks_inserted,
-            "resources_count": len(resources_inserted)
+        # Leer contenido del archivo
+        content = await file.read()
+        csv_file = io.StringIO(content.decode('utf-8'))
+        
+        # Leer CSV en DataFrame
+        df = pd.read_csv(csv_file)
+        
+        # 1. Limpieza y estandarización de encabezados
+        df.columns = df.columns.str.strip().str.replace(' ', '_').str.lower()
+        
+        # 2. Renombrar columnas clave si es necesario (Asegúrate que estas columnas coincidan con tu CSV)
+        df = df.rename(columns={
+            'task_id': 'id', # Debería ser la clave primaria
+            'project_name': 'project',
+            'status': 'status',
+            'due_date': 'end', 
+            'start_date': 'start',
+            'assigned_to': 'user',
+            'estimated_effort_hrs': 'effort_hrs',
+            'description': 'text' # Para el Gantt
         })
+        
+        # 3. Conversión de fechas y estandarización de status
+        
+        # Asegurar que las columnas clave existan antes de procesar
+        required_cols = ['id', 'project', 'text', 'status', 'start', 'end', 'user']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise HTTPException(status_code=400, detail=f"Faltan columnas requeridas en el CSV: {', '.join(missing_cols)}")
 
-    except Exception as e:
-        print(f"Error en ingest_tasks_from_csv: {e}")
-        raise HTTPException(status_code=500, detail=f"Error al procesar el archivo CSV. Detalle: {str(e)}")
 
-# =======================================================
-# 📌 ENDPOINT DE GANTT (CORREGIDO)
-# =======================================================
-@app.get("/api/tasks/gantt")
-async def get_gantt_tasks(
-    status: str = Query(None, description="Filtrar por estado de la tarea"),
-    user_id: str = Query(None, description="Filtrar por ID de usuario asignado")
-):
-    try:
-        query = {}
-        if status:
-            query["status"] = {"$regex": status, "$options": "i"}
-        if user_id:
-            query["assigned_to"] = user_id
+        # Intentar convertir las fechas
+        df['start'] = df['start'].apply(safe_date_parse)
+        df['end'] = df['end'].apply(safe_date_parse)
+        
+        # Filtrar filas donde las fechas no pudieron ser parseadas (si no son válidas, se ignoran o corrigen)
+        df.dropna(subset=['start', 'end'], inplace=True) 
+        
+        # Estandarizar status (mayúsculas)
+        df['status'] = df['status'].apply(to_upper)
+        
+        # 4. Preparar para MongoDB
+        # Convertir NaN a None (importante para json.loads)
+        df = df.replace({np.nan: None}) 
+        
+        # Convertir DataFrame a lista de diccionarios
+        data_to_insert = df.to_dict('records')
+        
+        if not data_to_insert:
+             raise HTTPException(status_code=400, detail="El archivo CSV no contiene datos válidos después de la limpieza.")
 
-        projection = {
-            "_id": 0, "task_id": 1, "title": 1, "status": 1, "assigned_to": 1,
-            "start_date": 1, "due_date": 1, "priority": 1, "created_at": 1,
-            "task_description": 1,
-            "raw_start_date": 1, "raw_due_date": 1, "raw_actual_completion_date": 1
-        }
-
-        results = list(db.tasks.find(query, projection).sort("start_date", 1).limit(200))
-
-        normalized = []
-        for r in results:
-            original_start_date = r.get("start_date")
-            created_at = r.get("created_at")
-
-            # Lógica de fecha de inicio (fallback a created_at si start_date no es datetime)
-            start_date_final = original_start_date if isinstance(original_start_date, datetime) else created_at
-            end_date = r.get("due_date")
-
-            # 💡 SOLUCIÓN CRÍTICA: Usar strftime para forzar formato YYYY-MM-DD
-            start_date_str = start_date_final.strftime("%Y-%m-%d") if isinstance(start_date_final, datetime) else None
-            end_date_str = end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime) else None
-
-            task_name = r.get("title") or r.get("task_description") or f"Tarea {r.get('task_id', '')}"
-
-            normalized.append({
-                "task_id": r.get("task_id", ""),
-                "name": task_name,
-                "status": to_upper(r.get("status", "PENDING")),
-                "assigned_user_id": r.get("assigned_to"),
-                "start_date": start_date_str, 
-                "end_date": end_date_str, # D3.js espera 'end_date'
-                "priority": r.get("priority", "medium"),
-                "created_at": created_at.strftime("%Y-%m-%d") if isinstance(created_at, datetime) else None,
-                "is_fallback_date": not isinstance(original_start_date, datetime) # Campo completado
-            })
+        # 5. Insertar o actualizar en MongoDB
+        collection = db["tasks"]
+        
+        # Usamos replace_one para manejar updates si el 'id' ya existe (upsert)
+        updates = 0
+        inserts = 0
+        
+        for record in data_to_insert:
+            # Creamos un filtro por el ID de la tarea
+            filter_query = {'id': record['id']}
             
-        return parse_json(normalized)
-    
-    except Exception as e:
-        print(f"Error en get_gantt_tasks: {e}")
-        return parse_json([]) # Retorna lista vacía en caso de error
+            # El campo _id se maneja automáticamente por MongoDB; no lo incluimos en el update si existe
+            record.pop('_id', None) 
+            
+            result = collection.replace_one(
+                filter_query,
+                record,
+                upsert=True # Si no existe, lo inserta
+            )
+            
+            if result.modified_count == 1 or result.matched_count == 1 and not result.upserted_id:
+                updates += 1
+            elif result.upserted_id:
+                inserts += 1
 
-# =======================================================
-# 📌 ENDPOINTS DE OVERDUE Y UPCOMING
-# =======================================================
-@app.get("/api/tasks/overdue")
-async def get_overdue_tasks():
-    try:
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-        query = {
-            "due_date": {"$lt": today},
-            "status": {"$nin": ["COMPLETED", "CANCELLED", "completado", "cancelado", "completed", "cancelled"]}
-        }
-        results = list(
-            db.tasks.find(query, {"_id": 0, "title": 1, "status": 1, "due_date": 1, "task_id": 1})
-            .sort("due_date", 1).limit(100)
+        # Actualizar el registro de la última actualización
+        db["metadata"].replace_one(
+            {"key": "last_update"}, 
+            {"key": "last_update", "timestamp": datetime.now(timezone.utc)}, 
+            upsert=True
         )
 
-        normalized = []
-        for r in results:
-            due_date = r.get("due_date")
-            days_overdue = 0
-            if isinstance(due_date, datetime):
-                days_overdue = (today - due_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)).days
-                days_overdue = max(0, days_overdue)
-            normalized.append({
-                "name": r.get("title") or f"Tarea {r.get('task_id', '')}",
-                "title": r.get("title") or f"Tarea {r.get('task_id', '')}",
-                "status": to_upper(r.get("status", "PENDIENTE")),
-                "due_date": due_date.isoformat() if isinstance(due_date, datetime) else None,
-                "days_overdue": days_overdue,
-                "task_id": r.get("task_id", "")
-            })
-        return parse_json(normalized)
+        return {"message": "Datos de tareas actualizados con éxito.", 
+                "total_records": len(data_to_insert), 
+                "inserted": inserts,
+                "updated": updates,
+                "db_name": db_name,
+                "collection": "tasks"}
+
+    except HTTPException:
+        # Re-lanza las excepciones HTTPException para que FastAPI las maneje
+        raise
     except Exception as e:
-        print(f"Error en get_overdue_tasks: {e}")
-        return []
+        print(f"Error general en ingest_csv_data: {e}")
+        raise HTTPException(status_code=500, detail=f"Error interno del servidor durante la ingesta: {e}")
+
+# =======================================================
+# 📊 OBTENCIÓN DE DATOS (GANTT, TABLA)
+# =======================================================
+
+@app.get("/api/tasks/all")
+async def get_all_tasks():
+    if not db:
+        raise HTTPException(status_code=503, detail="Servicio de base de datos no disponible.")
+        
+    try:
+        tasks = list(db["tasks"].find({}))
+        
+        if not tasks:
+            return parse_json([]) # Retorna lista vacía si no hay tareas
+        
+        # Devolvemos un JSON parseado
+        return parse_json(tasks)
+        
+    except Exception as e:
+        print(f"Error en get_all_tasks: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al obtener las tareas: {e}")
 
 @app.get("/api/tasks/upcoming")
-async def get_upcoming_tasks():
-    try:
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-        next_week = today + timedelta(days=7)
-        query = {
-            "due_date": {"$gte": today, "$lt": next_week},
-            "status": {"$nin": ["COMPLETED", "CANCELLED", "completado", "cancelado", "completed", "cancelled"]}
-        }
-        results = list(
-            db.tasks.find(query, {"_id": 0, "title": 1, "status": 1, "due_date": 1, "task_id": 1})
-            .sort("due_date", 1).limit(100)
-        )
+async def get_upcoming_tasks(days: Optional[int] = Query(30, description="Número de días a futuro para filtrar.")):
+    if not db:
+        raise HTTPException(status_code=503, detail="Servicio de base de datos no disponible.")
 
-        normalized = []
-        for r in results:
-            due_date = r.get("due_date")
-            normalized.append({
-                "name": r.get("title") or f"Tarea {r.get('task_id', '')}",
-                "status": to_upper(r.get("status", "PENDIENTE")),
-                "due_date": due_date.isoformat() if isinstance(due_date, datetime) else None,
-                "task_id": r.get("task_id", "")
-            })
-        return parse_json(normalized)
+    try:
+        now = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        future_date = now + timedelta(days=days)
+        
+        # Filtramos por tareas que terminan entre hoy y la fecha futura, y que no estén completadas
+        query = {
+            "end": {"$gte": now, "$lte": future_date},
+            "status": {"$ne": to_upper("COMPLETED")} 
+        }
+        
+        tasks = list(db["tasks"].find(query).sort("end", 1)) # Ordenar por fecha de fin ascendente
+        
+        return parse_json(tasks)
+        
     except Exception as e:
         print(f"Error en get_upcoming_tasks: {e}")
-        return []
+        raise HTTPException(status_code=500, detail=f"Error al obtener las tareas futuras: {e}")
 
 # =======================================================
-# 🔧 ESTADO, MÉTRICAS Y CARGA DE RECURSOS
+# 📈 MÉTRICAS (SCOREBOARD)
 # =======================================================
-@app.get("/api/status")
-async def api_status():
-    try:
-        db.command("ping")
-        task_count = db.tasks.count_documents({})
-        resource_count = db.resources.count_documents({})
-        return parse_json({
-            "status": "online", "mongo_connected": True,
-            "task_count": task_count, "resource_count": resource_count,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
-    except Exception as e:
-        print(f"Error en api_status: {e}")
-        raise HTTPException(status_code=503, detail="No se pudo conectar con MongoDB")
-
-@app.get("/api/project/status")
-async def get_project_status():
-    try:
-        pipeline = [
-            {"$group": {"_id": {"$ifNull": ["$status", "SIN ESTADO"]}, "count": {"$sum": 1}}},
-            {"$project": {"status": {"$toUpper": "$_id"}, "count": 1, "_id": 0}},
-            {"$sort": {"count": -1}}
-        ]
-        results = list(db.tasks.aggregate(pipeline))
-        return parse_json(results)
-    except Exception as e:
-        print(f"Error en get_project_status: {e}")
-        raise HTTPException(status_code=500, detail="Error al obtener estado del proyecto")
-
-@app.get("/api/resources/load")
-async def get_resources_load():
-    try:
-        pipeline = [
-            {"$match": {"assigned_to": {"$ne": None, "$exists": True, "$ne": ""}}},
-            {"$group": {
-                "_id": "$assigned_to",
-                "tasks_in_progress": {"$sum": {"$cond": [{"$in": [{"$toUpper": "$status"}, ["IN_PROGRESS", "EN PROGRESO"]]}, 1, 0]}},
-                "total_tasks": {"$sum": 1}
-            }},
-            {"$project": {"user_id": "$_id", "tasks_in_progress": 1, "total_tasks": 1, "_id": 0}},
-            {"$sort": {"tasks_in_progress": -1}}
-        ]
-        results = list(db.tasks.aggregate(pipeline))
-        return parse_json([
-            {
-                "user_id": r.get("user_id", ""),
-                "tasks_in_progress": r.get("tasks_in_progress", 0),
-                "total_tasks": r.get("total_tasks", 0)
-            } for r in results
-        ])
-    except Exception as e:
-        print(f"Error en get_resources_load: {e}")
-        return []
-
-@app.get("/api/workload")
-async def get_resources_load_alias():
-    return await get_resources_load()
-
 @app.get("/api/metrics")
 async def get_metrics():
-    try:
-        total_tasks = db.tasks.count_documents({})
-        completed_tasks = db.tasks.count_documents({"status": {"$in": ["COMPLETED", "completado", "completed"]}})
-        completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+    if not db:
+        return parse_json({"total_tasks": 0, "completed_tasks": 0, "completion_rate": 0, "avg_completion_time": 0})
         
-        # NOTE: El cálculo de avg_completion_time no estaba completo, se deja el valor hardcodeado o se calcula 
-        # Si tienes la lógica completa, inclúyela. Se mantiene el valor fijo para evitar fallos si no se puede calcular.
+    try:
+        collection = db["tasks"]
+        
+        # 1. Total de Tareas
+        total_tasks = await collection.count_documents({})
+        
+        # 2. Tareas Completadas
+        completed_tasks = await collection.count_documents({"status": to_upper("COMPLETED")})
+        
+        # 3. Tasa de Finalización
+        completion_rate = round((completed_tasks / total_tasks) * 100, 1) if total_tasks > 0 else 0
+        
+        # 4. Tiempo promedio de finalización (Lógica Placeholder, ya que depende de campos 'completed_at')
+        # Si tienes un campo 'completed_at', usa lógica real.
+        # Por ahora, se mantiene el valor fijo para evitar fallos si no se puede calcular.
         avg_completion_time = 5.2 
         
         return parse_json({
@@ -382,11 +310,9 @@ async def favicon():
     raise HTTPException(status_code=404, detail="No favicon configured")
 
 # =======================================================
-# ▶️ MAIN
+# ▶️ MAIN (No usado en Uvicorn, pero útil si lo corres directamente)
 # =======================================================
 if __name__ == "__main__":
     import uvicorn
+    # Usa un puerto por defecto para pruebas locales
     uvicorn.run(app, host="0.0.0.0", port=8000)
-    
-    
-    # LISTO 8
