@@ -3,7 +3,8 @@
 // Configuración global
 // const API_BASE_URL = 'http://localhost:8000'; 
 // const API_BASE_URL = 'http://backend:8000'; 
-const API_BASE_URL = 'mongodb+srv://aguilarhugo55_db_user:c5mfG11QT68ib4my@clusteract1.kpdhd5e.mongodb.net/?appName=ClusterAct1'; 
+// const API_BASE_URL = 'mongodb+srv://aguilarhugo55_db_user:c5mfG11QT68ib4my@clusteract1.kpdhd5e.mongodb.net/?appName=ClusterAct1'; 
+const API_BASE_URL = 'https://pm-dashb-7.onrender.com';
 
 let lastUpdateTime = null;
 let ganttZoomLevel = 'days'; // 'days' | 'weeks' | 'months'
