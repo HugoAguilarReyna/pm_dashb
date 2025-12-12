@@ -1,7 +1,8 @@
 // dashboard.js - VERSIÓN FINAL UNIFICADA Y CORREGIDA (Con autoajuste de Scoreboard)
 
 // Configuración global
-const API_BASE_URL = 'http://localhost:8000'; 
+// const API_BASE_URL = 'http://localhost:8000'; 
+const API_BASE_URL = 'http://backend:8000'; 
 let lastUpdateTime = null;
 let ganttZoomLevel = 'days'; // 'days' | 'weeks' | 'months'
 

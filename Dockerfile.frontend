@@ -1,0 +1,16 @@
+# Usa una imagen base de Nginx ligera
+FROM nginx:alpine
+
+# Copia los archivos de tu dashboard (HTML, JS, CSS)
+# El 'context: .' en docker-compose.yml hace que Docker busque estos
+# archivos en la carpeta raíz del proyecto.
+COPY index.html /usr/share/nginx/html/
+COPY dashboard.js /usr/share/nginx/html/
+COPY styles.css /usr/share/nginx/html/
+
+# Si tienes assets adicionales (imágenes, fuentes, etc.),
+# deberías copiarlos también:
+# COPY assets/ /usr/share/nginx/html/assets/
+
+# Nginx está configurado por defecto para servir desde /usr/share/nginx/html/
+# El comando de inicio por defecto de Nginx ya está configurado.

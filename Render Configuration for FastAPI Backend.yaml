@@ -1,0 +1,49 @@
+# Configuración para el despliegue del servicio de la API de FastAPI en Render.
+# Este archivo define cómo se debe construir y ejecutar el servicio.
+
+# Define el servicio web principal (la API de FastAPI)
+services:
+  - type: web
+    name: tesina-fastapi-api
+    # El entorno de construcción. 'docker' le dice a Render que use el Dockerfile.
+    # Asume que tu Dockerfile para la API está en ./backend/Dockerfile
+    env: docker
+    
+    # Ruta al directorio que contiene el Dockerfile (relativa a la raíz del repo)
+    rootDir: backend
+    
+    # Nombre del archivo Dockerfile dentro del rootDir
+    dockerfilePath: Dockerfile 
+
+    # Puerto en el que tu API escucha dentro del contenedor (FastAPI por defecto)
+    port: 8000
+    
+    # El plan gratuito puede ser suficiente para la tesina.
+    plan: free
+
+    # Comando de inicio
+    # Render lo ejecutará una vez que el contenedor esté construido.
+    # El comando es similar al que tendrías en tu Dockerfile o docker-compose.
+    # Asegúrate de que este comando coincide con la forma en que ejecutas tu app.
+    # Si tu Dockerfile ya tiene CMD ["uvicorn", ...], puedes omitir esto.
+    # Dejamos un comando explícito para mayor seguridad, asumiendo que tu archivo principal es main.py
+    # Si tu archivo se llama app.py o tiene otro nombre, ajústalo aquí.
+    # Ejemplo:
+    # startCommand: uvicorn main:app --host 0.0.0.0 --port 8000
+    
+    # Variables de entorno CRUCIALES para MongoDB Atlas
+    envVars:
+      # Render requiere que definas tus secretos aquí. 
+      # **IMPORTANTE**: Reemplaza estos valores con tus credenciales REALES de MongoDB Atlas.
+      # Utiliza las variables de entorno que ya definiste en tu docker-compose.yml
+      - key: MONGO_ATLAS_URI
+        value: "mongodb+srv://aguilarhugo55_db_user:c5mfG11QT68ib4my@clusteract1.kpdhd5e.mongodb.net/?appName=ClusterAct1"
+      - key: DB_NAME
+        value: "dash_pm"
+
+    # Permite la construcción automática cada vez que se hace un 'push' a la rama principal
+    autoDeploy: true
+
+    # Si tu backend tiene que recibir datos de un frontend diferente (como GitHub Pages),
+    # DEBES configurar CORS en el código de tu API (FastAPI) para aceptar el dominio
+    # de GitHub Pages (https://tu-usuario.github.io).

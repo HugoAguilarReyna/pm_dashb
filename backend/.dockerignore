@@ -1,0 +1,17 @@
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.git/
+.gitignore
+data/
+datasets/
+models/
+*.csv
+*.xlsx
+.pkl
+docker-compose.yml
+Dockerfile
+Dockerfile.
