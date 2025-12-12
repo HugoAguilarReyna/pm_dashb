@@ -243,18 +243,10 @@ async function renderProjectStatus() {
     const g = svg.append('g')
       .attr('transform', `translate(${width / 2}, ${height / 2})`);
 
-    // Definir colores mejorados (más contraste)
-    const colorPalette = {
-      'TO_DO': '#FF6B6B',      // Rojo coral
-      'IN_PROGRESS': '#4ECDC4', // Turquesa
-      'COMPLETED': '#06D6A0',   // Verde esmeralda
-      'BLOCKED': '#FFD166',     // Amarillo mostaza
-      'CANCELLED': '#6C757D'    // Gris
-    };
-
+    // USAR LOS COLORES DEFINIDOS GLOBALMENTE - CORRECCIÓN
     const color = d3.scaleOrdinal()
       .domain(pieData.map(d => d.status))
-      .range(pieData.map(d => colorPalette[d.status] || '#CCCCCC'));
+      .range(pieData.map(d => statusColors[d.status] || '#CCCCCC'));
 
     // Crear gráfica de donut
     const pie = d3.pie()
@@ -271,7 +263,7 @@ async function renderProjectStatus() {
       .attr('class', 'arc')
       .style('cursor', 'pointer');
 
-    // Dibujar segmentos con mejor contraste
+    // Dibujar segmentos con los colores correctos
     arcs.append('path')
       .attr('d', arc)
       .attr('fill', d => color(d.data.status))
@@ -347,7 +339,8 @@ async function renderProjectStatus() {
         const colorValue = color(d.data.status);
         const rgb = d3.rgb(colorValue);
         const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-        return brightness > 125 ? '#000000' : '#FFFFFF';
+        // Para colores muy claros usar texto negro, para oscuros usar blanco
+        return brightness > 150 ? '#000000' : '#FFFFFF';
       })
       .style('font-size', '12px')
       .style('font-weight', 'bold')
@@ -447,6 +440,7 @@ async function renderProjectStatus() {
   }
 }
 
+// Función renderWorkloadLegend - ASEGURAR QUE ESTÁ DEFINIDA
 function renderWorkloadLegend(container) {
   const relevantStatuses = {
     'TO_DO': statusColors['TO_DO'],
@@ -488,6 +482,7 @@ function renderWorkloadLegend(container) {
       .text(d.status);
   });
 }
+
 
 // =======================================================
 // 3. CARGA DE TRABAJO (Bar Chart) - CORREGIDO
