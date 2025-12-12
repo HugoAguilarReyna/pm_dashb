@@ -1,15 +1,23 @@
-# Usa una imagen base ligera de Python
+# Usar una imagen base de Python estable
 FROM python:3.10-slim
 
-# Establece el directorio de trabajo dentro del contenedor
+# 1. Establecer el directorio de trabajo dentro del contenedor
 WORKDIR /app
 
-# Copia el archivo de dependencias y las instala
+# 2. Copiar los archivos de dependencia y seguridad
+# (Asumiendo que tienes un requirements.txt en backend/)
 COPY requirements.txt .
+
+# 3. Instalar dependencias
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia el resto de tu código (incluyendo app.py) al contenedor
+# 4. Copiar el resto del código fuente del backend a /app
+# El contexto de Render es `backend/`, por lo que el `.` es el contenido de esa carpeta.
 COPY . .
 
-# Comando para iniciar la aplicación FastAPI
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# 5. Exponer el puerto de Uvicorn (opcional, pero buena práctica)
+EXPOSE 8000
+
+# NOTA: Render está ignorando el CMD de aquí porque lo estableciste
+# en la configuración de Render, lo cual es correcto para usar $PORT.
+# CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
