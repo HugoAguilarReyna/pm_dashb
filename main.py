@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Dashboard Tesina API",
     description="API para el dashboard de gestión de proyectos",
-    version="2.1.2" # Versión actualizada con endpoint de limpieza
+    version="2.1.3" # Versión actualizada con corrección de métricas
 )
 
 # --- Configuración CORS ---
@@ -697,13 +697,13 @@ async def get_project_status():
         }
 
 # =======================================================
-# ENDPOINTS DE MÉTRICAS
+# ENDPOINTS DE MÉTRICAS (CORREGIDO PARA GRÁFICO DE DONA)
 # =======================================================
 @app.get("/api/metrics")
 async def get_metrics():
-    """Obtiene métricas generales del dashboard."""
+    """Obtiene métricas generales y conteos por estado para el gráfico de dona."""
     if not is_db_available():
-        # Modo demo
+        # Modo demo CORREGIDO para incluir los campos que espera el frontend
         return {
             "total_tasks": 25,
             "completed_tasks": 10,
@@ -711,47 +711,108 @@ async def get_metrics():
             "avg_completion_time": 7.5,
             "overdue_tasks": 5,
             "active_tasks": 15,
+            # <--- CAMPOS AÑADIDOS PARA EL GRÁFICO DE DONA --->
+            "IN_PROGRESS": 5,
+            "BLOCKED": 3,
+            "TO_DO": 7,
+            "COMPLETED": 10,
             "demo_mode": True
         }
     
     try:
         collection = db["tasks"]
-        
-        # Conteos básicos
-        total_tasks = collection.count_documents({})
-        completed_tasks = collection.count_documents({"status": "COMPLETED"})
-        
-        # Tareas vencidas
         now = datetime.now()
+        
+        # --- NUEVO PIPELINE DE AGREGACIÓN PARA MÉTRICAS Y CONTEO POR ESTADO ---
+        pipeline = [
+            # 1. Agrupar todas las tareas para un conteo total y conteo por estado
+            {
+                "$group": {
+                    "_id": None, # Agrupar todo
+                    "total_tasks": {"$sum": 1},
+                    "completed_tasks": {
+                        "$sum": {"$cond": [{"$eq": ["$status", "COMPLETED"]}, 1, 0]}
+                    },
+                    "in_progress": {
+                        "$sum": {"$cond": [{"$eq": ["$status", "IN_PROGRESS"]}, 1, 0]}
+                    },
+                    "blocked": {
+                        "$sum": {"$cond": [{"$eq": ["$status", "BLOCKED"]}, 1, 0]}
+                    },
+                    "to_do": {
+                        "$sum": {"$cond": [{"$eq": ["$status", "TO_DO"]}, 1, 0]}
+                    },
+                    # Puedes agregar otros estados aquí si los usas
+                }
+            },
+            # 2. Proyectar y calcular la tasa de finalización
+            {
+                "$project": {
+                    "_id": 0,
+                    "total_tasks": 1,
+                    "completed_tasks": 1,
+                    "IN_PROGRESS": "$in_progress",
+                    "BLOCKED": "$blocked",
+                    "TO_DO": "$to_do",
+                    "COMPLETED": "$completed_tasks",
+                    "completion_rate": {
+                        "$cond": {
+                            "if": {"$gt": ["$total_tasks", 0]},
+                            "then": {"$multiply": [{"$divide": ["$completed_tasks", "$total_tasks"]}, 100]},
+                            "else": 0
+                        }
+                    }
+                }
+            }
+        ]
+        
+        # Ejecutar la agregación
+        results = list(collection.aggregate(pipeline))
+        
+        # Obtener métricas del resultado de la agregación (si hay datos)
+        if results:
+            metrics = results[0]
+            total_tasks = metrics["total_tasks"]
+            completed_tasks = metrics["completed_tasks"]
+        else:
+            metrics = {}
+            total_tasks = 0
+            completed_tasks = 0
+
+        # Tareas vencidas (Requiere una segunda query simple ya que necesita la fecha actual)
         overdue_tasks = collection.count_documents({
             "end": {"$lt": now},
             "status": {"$ne": "COMPLETED"}
         })
         
-        # Tareas activas (en progreso o pendientes)
-        active_tasks = collection.count_documents({
-            "status": {"$in": ["IN_PROGRESS", "TO_DO", "PENDING"]}
-        })
+        # Tareas activas (No completadas)
+        active_tasks = total_tasks - completed_tasks
         
-        return {
+        # Consolidar todas las métricas en un solo diccionario
+        final_metrics = {
             "total_tasks": total_tasks,
             "completed_tasks": completed_tasks,
-            "completion_rate": round((completed_tasks / total_tasks * 100) if total_tasks > 0 else 0, 1),
+            "completion_rate": round(metrics.get("completion_rate", 0), 1),
             "avg_completion_time": 7.5, # Valor fijo por ahora
             "overdue_tasks": overdue_tasks,
             "active_tasks": active_tasks,
+            # Exportar conteos por estado para el frontend
+            "IN_PROGRESS": metrics.get("IN_PROGRESS", 0),
+            "BLOCKED": metrics.get("BLOCKED", 0),
+            "TO_DO": metrics.get("TO_DO", 0),
+            "COMPLETED": metrics.get("COMPLETED", 0),
             "demo_mode": False
         }
+
+        return final_metrics
         
     except Exception as e:
         logger.error(f"Error en get_metrics: {e}")
+        # Retorno de error para evitar que el frontend colapse
         return {
-            "total_tasks": 0,
-            "completed_tasks": 0,
-            "completion_rate": 0,
-            "avg_completion_time": 0,
-            "overdue_tasks": 0,
-            "active_tasks": 0
+            "total_tasks": 0, "completed_tasks": 0, "completion_rate": 0,
+            "avg_completion_time": 0, "overdue_tasks": 0, "active_tasks": 0,
+            "IN_PROGRESS": 0, "BLOCKED": 0, "TO_DO": 0, "COMPLETED": 0
         }
 
 @app.get("/api/metrics/summary")
@@ -760,7 +821,7 @@ async def get_metrics_summary():
     return await get_metrics()
 
 # =======================================================
-# ENDPOINT CARGA DE TRABAJO - CORREGIDO
+# ENDPOINT CARGA DE TRABAJO
 # =======================================================
 @app.get("/api/tasks/workload")
 async def get_workload_data():
@@ -902,36 +963,4 @@ async def get_workload_data():
         
     except Exception as e:
         logger.error(f"Error en get_workload_data: {e}")
-        # En caso de error, devuelve una lista vacía en lugar de un error 500 para no romper el dashboard
-        return parse_json([])
-
-# =======================================================
-# ENDPOINT SCOREBOARD DE EFICIENCIA
-# =======================================================
-@app.get("/api/efficiency/scoreboard")
-async def get_efficiency_scoreboard():
-    """Obtiene el scoreboard de eficiencia por usuario."""
-    try:
-        # Usar datos de workload
-        workload_data = await get_workload_data()
-        
-        # El endpoint get_workload_data maneja sus propios errores
-        # y devuelve una lista vacía o HTTPException (que ya es manejada por FastAPI)
-        
-        # Si el resultado es un diccionario (y tiene 'detail', podría ser un error 503 HTTP)
-        if isinstance(workload_data, dict) and "detail" in workload_data:
-            logger.warning("Workload data regresó un error. Devolviendo lista vacía.")
-            return parse_json([])
-        
-        # Ordenar por tasa de finalización descendente
-        if isinstance(workload_data, list):
-            workload_data.sort(key=lambda x: x.get("completion_rate", 0), reverse=True)
-            
-            return parse_json(workload_data)
-        else:
-            # Si no es lista ni dict-error, algo raro pasó.
-            return parse_json([]) 
-            
-    except Exception as e: # <--- BLOQUE 'EXCEPT' AGREGADO PARA CERRAR EL 'TRY'
-        logger.error(f"Error en get_efficiency_scoreboard: {e}")
-        return parse_json([])
+        raise HTTPException(status_code=500, detail=f"Error al obtener datos de carga de trabajo: {str(e)}")
