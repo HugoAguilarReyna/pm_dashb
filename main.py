@@ -1,318 +1,363 @@
-import os
-import json
-from fastapi import FastAPI, Query, File, UploadFile, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pymongo import MongoClient
-from datetime import datetime, timedelta, timezone
-from bson import json_util
-import io
-import pandas as pd
-import numpy as np
-from typing import Optional
-
-app = FastAPI(title="Dashboard Tesina API")
-
-# --- Configuración CORS ---
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# --- Conexión MongoDB Corregida ---
-# Buscamos MONGO_ATLAS_URI, MONGO_URI, o caemos al valor local.
-mongo_uri = os.getenv("MONGO_ATLAS_URI") or os.getenv("MONGO_URI")
-# Buscamos DB_NAME o usamos el valor por defecto si no está configurado.
-db_name = os.getenv("DB_NAME") or "project_dashboard"
-
-# Fallback para desarrollo local
-if not mongo_uri:
-    mongo_uri = "mongodb://localhost:27017/"
-
-# Inicialización de la conexión
-client = None
-db = None
-try:
-    client = MongoClient(mongo_uri)
-    db = client[db_name] 
-    
-    # Comprobación de conexión (opcional, pero buena práctica)
-    client.admin.command('ping')
-    print(f"Conexión exitosa a MongoDB. Base de Datos: {db_name}")
-
-except Exception as e:
-    print(f"--- ERROR CRÍTICO DE CONEXIÓN A MONGO ---")
-    print(f"URI usada: {mongo_uri}. DB: {db_name}")
-    print(f"Error: {e}")
-    # Lanzamos una excepción para detener la aplicación si la DB es vital
-    raise HTTPException(status_code=500, detail=f"Fallo al conectar con la base de datos: {e}")
-
-
-# --- Funciones Auxiliares ---
-def parse_json(data):
-    return json.loads(json_util.dumps(data))
-
-def to_upper(s):
-    return s.upper() if isinstance(s, str) else s
-
-def safe_date_parse(date_value):
-    """
-    Convierte un valor a datetime naive (sin tz).
-    Soporta múltiples formatos: DD/MM/YYYY, DD/MM/YYYY HH:MM:SS, YYYY-MM-DD, YYYY-MM-DD HH:MM:SS.
-    """
-    if not date_value or str(date_value).lower() in ['nan', 'nat', 'none']:
-        return None
-    
-    date_str = str(date_value).split('.')[0] # Remueve milisegundos si vienen de numpy
-    
-    formats = [
-        '%d/%m/%Y', '%d/%m/%Y %H:%M:%S', 
-        '%Y-%m-%d', '%Y-%m-%d %H:%M:%S',
-        '%Y-%m-%d %H:%M:%S%z', # con timezone (lo convertiremos a naive)
-    ]
-    
-    for fmt in formats:
-        try:
-            dt = datetime.strptime(date_str, fmt)
-            # Asegurar que sea naive (sin zona horaria)
-            if dt.tzinfo is not None:
-                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-            return dt
-        except ValueError:
-            continue
-            
-    try:
-        # Intenta parsear como fecha ISO que pandas puede producir
-        dt = pd.to_datetime(date_value, errors='coerce')
-        if pd.notna(dt):
-            # Convertir a datetime de Python y hacerlo naive
-            if dt.tzinfo is not None:
-                dt = dt.tz_convert(None) # Remueve timezone si existe
-            return dt.to_pydatetime()
-    except Exception:
-        pass
-
-    print(f"Advertencia: No se pudo parsear la fecha/hora: {date_value}")
-    return None
-
-def is_date_valid(date_value):
-    """Verifica si la fecha es un objeto datetime."""
-    return isinstance(date_value, datetime)
-
-
 # =======================================================
-# 📎 CARGA DE DATOS (CSV)
+# 📅 TAREAS VENCIDAS (OVERDUE)
 # =======================================================
-@app.post("/api/ingest-csv")
-async def ingest_csv_data(file: UploadFile = File(...)):
-    if not db:
-        raise HTTPException(status_code=503, detail="Servicio de base de datos no disponible.")
-        
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos CSV.")
-
-    try:
-        # Leer contenido del archivo
-        content = await file.read()
-        csv_file = io.StringIO(content.decode('utf-8'))
-        
-        # Leer CSV en DataFrame
-        df = pd.read_csv(csv_file)
-        
-        # 1. Limpieza y estandarización de encabezados
-        df.columns = df.columns.str.strip().str.replace(' ', '_').str.lower()
-        
-        # 2. Renombrar columnas clave si es necesario (Asegúrate que estas columnas coincidan con tu CSV)
-        df = df.rename(columns={
-            'task_id': 'id', # Debería ser la clave primaria
-            'project_name': 'project',
-            'status': 'status',
-            'due_date': 'end', 
-            'start_date': 'start',
-            'assigned_to': 'user',
-            'estimated_effort_hrs': 'effort_hrs',
-            'description': 'text' # Para el Gantt
-        })
-        
-        # 3. Conversión de fechas y estandarización de status
-        
-        # Asegurar que las columnas clave existan antes de procesar
-        required_cols = ['id', 'project', 'text', 'status', 'start', 'end', 'user']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            raise HTTPException(status_code=400, detail=f"Faltan columnas requeridas en el CSV: {', '.join(missing_cols)}")
-
-
-        # Intentar convertir las fechas
-        df['start'] = df['start'].apply(safe_date_parse)
-        df['end'] = df['end'].apply(safe_date_parse)
-        
-        # Filtrar filas donde las fechas no pudieron ser parseadas (si no son válidas, se ignoran o corrigen)
-        df.dropna(subset=['start', 'end'], inplace=True) 
-        
-        # Estandarizar status (mayúsculas)
-        df['status'] = df['status'].apply(to_upper)
-        
-        # 4. Preparar para MongoDB
-        # Convertir NaN a None (importante para json.loads)
-        df = df.replace({np.nan: None}) 
-        
-        # Convertir DataFrame a lista de diccionarios
-        data_to_insert = df.to_dict('records')
-        
-        if not data_to_insert:
-             raise HTTPException(status_code=400, detail="El archivo CSV no contiene datos válidos después de la limpieza.")
-
-        # 5. Insertar o actualizar en MongoDB
-        collection = db["tasks"]
-        
-        # Usamos replace_one para manejar updates si el 'id' ya existe (upsert)
-        updates = 0
-        inserts = 0
-        
-        for record in data_to_insert:
-            # Creamos un filtro por el ID de la tarea
-            filter_query = {'id': record['id']}
-            
-            # El campo _id se maneja automáticamente por MongoDB; no lo incluimos en el update si existe
-            record.pop('_id', None) 
-            
-            result = collection.replace_one(
-                filter_query,
-                record,
-                upsert=True # Si no existe, lo inserta
-            )
-            
-            if result.modified_count == 1 or result.matched_count == 1 and not result.upserted_id:
-                updates += 1
-            elif result.upserted_id:
-                inserts += 1
-
-        # Actualizar el registro de la última actualización
-        db["metadata"].replace_one(
-            {"key": "last_update"}, 
-            {"key": "last_update", "timestamp": datetime.now(timezone.utc)}, 
-            upsert=True
-        )
-
-        return {"message": "Datos de tareas actualizados con éxito.", 
-                "total_records": len(data_to_insert), 
-                "inserted": inserts,
-                "updated": updates,
-                "db_name": db_name,
-                "collection": "tasks"}
-
-    except HTTPException:
-        # Re-lanza las excepciones HTTPException para que FastAPI las maneje
-        raise
-    except Exception as e:
-        print(f"Error general en ingest_csv_data: {e}")
-        raise HTTPException(status_code=500, detail=f"Error interno del servidor durante la ingesta: {e}")
-
-# =======================================================
-# 📊 OBTENCIÓN DE DATOS (GANTT, TABLA)
-# =======================================================
-
-@app.get("/api/tasks/all")
-async def get_all_tasks():
-    if not db:
-        raise HTTPException(status_code=503, detail="Servicio de base de datos no disponible.")
-        
-    try:
-        tasks = list(db["tasks"].find({}))
-        
-        if not tasks:
-            return parse_json([]) # Retorna lista vacía si no hay tareas
-        
-        # Devolvemos un JSON parseado
-        return parse_json(tasks)
-        
-    except Exception as e:
-        print(f"Error en get_all_tasks: {e}")
-        raise HTTPException(status_code=500, detail=f"Error al obtener las tareas: {e}")
-
-@app.get("/api/tasks/upcoming")
-async def get_upcoming_tasks(days: Optional[int] = Query(30, description="Número de días a futuro para filtrar.")):
+@app.get("/api/tasks/overdue")
+async def get_overdue_tasks():
     if not db:
         raise HTTPException(status_code=503, detail="Servicio de base de datos no disponible.")
 
     try:
-        now = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        future_date = now + timedelta(days=days)
+        now = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
         
-        # Filtramos por tareas que terminan entre hoy y la fecha futura, y que no estén completadas
+        # Filtramos por tareas que ya deberían haberse completado (end < now)
+        # y que no están completadas
         query = {
-            "end": {"$gte": now, "$lte": future_date},
-            "status": {"$ne": to_upper("COMPLETED")} 
+            "end": {"$lt": now},
+            "status": {"$ne": to_upper("COMPLETED")}
         }
         
-        tasks = list(db["tasks"].find(query).sort("end", 1)) # Ordenar por fecha de fin ascendente
-        
+        tasks = list(db["tasks"].find(query).sort("end", 1))  # Ordenar por fecha de fin
         return parse_json(tasks)
         
     except Exception as e:
-        print(f"Error en get_upcoming_tasks: {e}")
-        raise HTTPException(status_code=500, detail=f"Error al obtener las tareas futuras: {e}")
+        print(f"Error en get_overdue_tasks: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al obtener tareas vencidas: {e}")
 
 # =======================================================
-# 📈 MÉTRICAS (SCOREBOARD)
+# 📊 ESTADO DEL PROYECTO
 # =======================================================
-@app.get("/api/metrics")
-async def get_metrics():
+@app.get("/api/project/status")
+async def get_project_status():
     if not db:
-        return parse_json({"total_tasks": 0, "completed_tasks": 0, "completion_rate": 0, "avg_completion_time": 0})
-        
+        raise HTTPException(status_code=503, detail="Servicio de base de datos no disponible.")
+
     try:
         collection = db["tasks"]
         
-        # 1. Total de Tareas
-        total_tasks = await collection.count_documents({})
+        # Agrupar por proyecto y status
+        pipeline = [
+            {
+                "$group": {
+                    "_id": {
+                        "project": "$project",
+                        "status": "$status"
+                    },
+                    "count": {"$sum": 1}
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$_id.project",
+                    "statuses": {
+                        "$push": {
+                            "status": "$_id.status",
+                            "count": "$count"
+                        }
+                    },
+                    "total_tasks": {"$sum": "$count"}
+                }
+            },
+            {
+                "$project": {
+                    "project": "$_id",
+                    "statuses": 1,
+                    "total_tasks": 1,
+                    "completed": {
+                        "$filter": {
+                            "input": "$statuses",
+                            "as": "status",
+                            "cond": {"$eq": ["$$status.status", to_upper("COMPLETED")]}
+                        }
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "project": 1,
+                    "total_tasks": 1,
+                    "completed_tasks": {"$arrayElemAt": ["$completed.count", 0]},
+                    "statuses": 1
+                }
+            },
+            {
+                "$addFields": {
+                    "completed_tasks": {"$ifNull": ["$completed_tasks", 0]},
+                    "completion_rate": {
+                        "$cond": {
+                            "if": {"$gt": ["$total_tasks", 0]},
+                            "then": {"$multiply": [{"$divide": ["$completed_tasks", "$total_tasks"]}, 100]},
+                            "else": 0
+                        }
+                    }
+                }
+            }
+        ]
         
-        # 2. Tareas Completadas
-        completed_tasks = await collection.count_documents({"status": to_upper("COMPLETED")})
+        results = list(collection.aggregate(pipeline))
         
-        # 3. Tasa de Finalización
-        completion_rate = round((completed_tasks / total_tasks) * 100, 1) if total_tasks > 0 else 0
+        # Si no hay resultados, devolver estructura vacía
+        if not results:
+            return parse_json({"projects": [], "summary": {"total_projects": 0, "avg_completion_rate": 0}})
         
-        # 4. Tiempo promedio de finalización (Lógica Placeholder, ya que depende de campos 'completed_at')
-        # Si tienes un campo 'completed_at', usa lógica real.
-        # Por ahora, se mantiene el valor fijo para evitar fallos si no se puede calcular.
-        avg_completion_time = 5.2 
+        # Calcular promedio de completion rate
+        total_rate = sum(project.get("completion_rate", 0) for project in results)
+        avg_rate = total_rate / len(results) if results else 0
         
         return parse_json({
-            "total_tasks": total_tasks, "completed_tasks": completed_tasks,
-            "completion_rate": completion_rate, "avg_completion_time": avg_completion_time
+            "projects": results,
+            "summary": {
+                "total_projects": len(results),
+                "avg_completion_rate": round(avg_rate, 2)
+            }
         })
+        
     except Exception as e:
-        print(f"Error en get_metrics: {e}")
-        return parse_json({"total_tasks": 0, "completed_tasks": 0, "completion_rate": 0, "avg_completion_time": 0})
-
-@app.get("/api/metrics/summary")
-async def get_metrics_summary():
-    return await get_metrics()
+        print(f"Error en get_project_status: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al obtener estado del proyecto: {e}")
 
 # =======================================================
-# 🩺 HEALTH, DAILY, FAVICON
+# 📈 DATOS PARA GANTT
 # =======================================================
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
+@app.get("/api/tasks/gantt")
+async def get_gantt_data(
+    project: Optional[str] = Query(None, description="Filtrar por proyecto"),
+    user: Optional[str] = Query(None, description="Filtrar por usuario"),
+    status: Optional[str] = Query(None, description="Filtrar por estado")
+):
+    if not db:
+        raise HTTPException(status_code=503, detail="Servicio de base de datos no disponible.")
 
-@app.get("/api/tasks/daily")
-async def get_daily_tasks():
-    # Asume que el frontend usará el endpoint /api/tasks/upcoming para el gráfico diario
-    return await get_upcoming_tasks()
-
-@app.get("/favicon.ico")
-async def favicon():
-    raise HTTPException(status_code=404, detail="No favicon configured")
+    try:
+        # Construir query dinámica
+        query = {}
+        
+        if project:
+            query["project"] = {"$regex": f"^{project}$", "$options": "i"}  # Búsqueda case-insensitive
+            
+        if user:
+            query["user"] = {"$regex": f"^{user}$", "$options": "i"}
+            
+        if status:
+            query["status"] = to_upper(status)
+        
+        # Campos necesarios para el Gantt
+        projection = {
+            "_id": 0,
+            "id": 1,
+            "text": 1,  # Nombre de la tarea
+            "start": 1,
+            "end": 1,
+            "duration": 1,
+            "progress": 1,
+            "user": 1,
+            "project": 1,
+            "status": 1,
+            "parent": 1
+        }
+        
+        tasks = list(db["tasks"].find(query, projection).sort("start", 1))
+        
+        # Transformar a formato que espera el frontend Gantt
+        gantt_data = []
+        for task in tasks:
+            # Asegurar que start y end sean datetime
+            start_date = task.get("start")
+            end_date = task.get("end")
+            
+            if not isinstance(start_date, datetime) or not isinstance(end_date, datetime):
+                continue  # Saltar tareas sin fechas válidas
+            
+            # Calcular duración en días si no existe
+            duration = task.get("duration")
+            if not duration:
+                duration_days = (end_date - start_date).days
+                duration = max(duration_days, 1)  # Mínimo 1 día
+            
+            gantt_data.append({
+                "id": task.get("id", ""),
+                "text": task.get("text", ""),
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "duration": duration,
+                "progress": task.get("progress", 0),
+                "user": task.get("user", ""),
+                "project": task.get("project", ""),
+                "status": task.get("status", ""),
+                "parent": task.get("parent", 0)
+            })
+        
+        # También obtener lista única de proyectos y usuarios para filtros
+        projects = db["tasks"].distinct("project")
+        users = db["tasks"].distinct("user")
+        
+        return parse_json({
+            "data": gantt_data,
+            "filters": {
+                "projects": [p for p in projects if p],
+                "users": [u for u in users if u]
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error en get_gantt_data: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al obtener datos Gantt: {e}")
 
 # =======================================================
-# ▶️ MAIN (No usado en Uvicorn, pero útil si lo corres directamente)
+# 📤 ENDPOINT DE INGESTA (COMPATIBILIDAD)
 # =======================================================
-if __name__ == "__main__":
-    import uvicorn
-    # Usa un puerto por defecto para pruebas locales
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.post("/api/ingest/tasks")
+async def ingest_tasks_compatibility(file: UploadFile = File(...)):
+    """Endpoint alternativo para compatibilidad con frontend existente"""
+    return await ingest_csv_data(file)
+
+# =======================================================
+# 📊 CARGA DE TRABAJO (WORKLOAD)
+# =======================================================
+@app.get("/api/tasks/workload")
+async def get_workload_data():
+    if not db:
+        raise HTTPException(status_code=503, detail="Servicio de base de datos no disponible.")
+
+    try:
+        # Agrupar tareas por usuario
+        pipeline = [
+            {
+                "$group": {
+                    "_id": "$user",
+                    "total_tasks": {"$sum": 1},
+                    "completed_tasks": {
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$status", to_upper("COMPLETED")]},
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                    "active_tasks": {
+                        "$sum": {
+                            "$cond": [
+                                {"$in": ["$status", [to_upper("IN_PROGRESS"), to_upper("PENDING")]]},
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                    "overdue_tasks": {
+                        "$sum": {
+                            "$cond": [
+                                {
+                                    "$and": [
+                                        {"$ne": ["$status", to_upper("COMPLETED")]},
+                                        {"$lt": ["$end", datetime.now()]}
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "user": "$_id",
+                    "total_tasks": 1,
+                    "completed_tasks": 1,
+                    "active_tasks": 1,
+                    "overdue_tasks": 1,
+                    "completion_rate": {
+                        "$cond": {
+                            "if": {"$gt": ["$total_tasks", 0]},
+                            "then": {"$multiply": [{"$divide": ["$completed_tasks", "$total_tasks"]}, 100]},
+                            "else": 0
+                        }
+                    }
+                }
+            },
+            {"$sort": {"total_tasks": -1}}  # Ordenar por carga descendente
+        ]
+        
+        results = list(db["tasks"].aggregate(pipeline))
+        return parse_json(results)
+        
+    except Exception as e:
+        print(f"Error en get_workload_data: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al obtener carga de trabajo: {e}")
+
+# =======================================================
+# 🎯 SCOREBOARD DE EFICIENCIA
+# =======================================================
+@app.get("/api/efficiency/scoreboard")
+async def get_efficiency_scoreboard():
+    if not db:
+        raise HTTPException(status_code=503, detail="Servicio de base de datos no disponible.")
+
+    try:
+        pipeline = [
+            {
+                "$group": {
+                    "_id": "$user",
+                    "total_tasks": {"$sum": 1},
+                    "completed_on_time": {
+                        "$sum": {
+                            "$cond": [
+                                {
+                                    "$and": [
+                                        {"$eq": ["$status", to_upper("COMPLETED")]},
+                                        {"$lte": ["$end", "$completed_at"]}  # Asumiendo que tienes completed_at
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                    "avg_completion_time": {
+                        "$avg": {
+                            "$cond": [
+                                {"$eq": ["$status", to_upper("COMPLETED")]},
+                                {"$subtract": ["$completed_at", "$start"]},  # Diferencia en milisegundos
+                                None
+                            ]
+                        }
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "user": "$_id",
+                    "total_tasks": 1,
+                    "completed_on_time": 1,
+                    "on_time_rate": {
+                        "$cond": {
+                            "if": {"$gt": ["$total_tasks", 0]},
+                            "then": {"$multiply": [{"$divide": ["$completed_on_time", "$total_tasks"]}, 100]},
+                            "else": 0
+                        }
+                    },
+                    "avg_completion_days": {
+                        "$cond": {
+                            "if": {"$ne": ["$avg_completion_time", None]},
+                            "then": {"$divide": ["$avg_completion_time", 1000 * 60 * 60 * 24]},  # Convertir a días
+                            "else": 0
+                        }
+                    }
+                }
+            },
+            {"$sort": {"on_time_rate": -1}}  # Ordenar por eficiencia descendente
+        ]
+        
+        results = list(db["tasks"].aggregate(pipeline))
+        
+        # Si no hay campo completed_at, devolver datos básicos
+        if not results or all(r["avg_completion_days"] == 0 for r in results):
+            # Fallback a carga de trabajo
+            return await get_workload_data()
+        
+        return parse_json(results)
+        
+    except Exception as e:
+        print(f"Error en get_efficiency_scoreboard: {e}")
+        # Fallback a carga de trabajo
+        return await get_workload_data()
