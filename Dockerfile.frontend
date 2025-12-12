@@ -7,6 +7,7 @@ FROM nginx:alpine
 COPY index.html /usr/share/nginx/html/
 COPY dashboard.js /usr/share/nginx/html/
 COPY styles.css /usr/share/nginx/html/
+COPY . /app
 
 # Si tienes assets adicionales (imágenes, fuentes, etc.),
 # deberías copiarlos también:

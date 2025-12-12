@@ -1,15 +1,21 @@
-# Usa una imagen base ligera de Python
-FROM python:3.10-slim
 
-# Establece el directorio de trabajo dentro del contenedor
-WORKDIR /app
 
-# Copia el archivo de dependencias y las instala
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Usar una imagen base de Python estable
+    FROM python:3.10-slim
 
-# Copia el resto de tu código (incluyendo app.py) al contenedor
-COPY . .
+    # Establecer el directorio de trabajo dentro del contenedor
+    WORKDIR /app
 
-# Comando para iniciar la aplicación FastAPI
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+    # 1. Copiar los archivos de dependencia. 
+    # Dado que el CONTEXTO es 'backend/', requirements.txt está directamente en la raíz del contexto.
+    COPY requirements.txt /app/requirements.txt
+
+    # 2. Instalar dependencias
+    RUN pip install --no-cache-dir -r /app/requirements.txt
+
+    # 3. Copiar el resto del código fuente del backend. 
+    # Esto copia el contenido del CONTEXTO (que es la carpeta 'backend') a /app/
+    COPY . /app
+
+    # 4. Comando de inicio
+    CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

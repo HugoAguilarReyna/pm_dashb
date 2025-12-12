@@ -2,7 +2,9 @@
 
 // Configuración global
 // const API_BASE_URL = 'http://localhost:8000'; 
-const API_BASE_URL = 'http://backend:8000'; 
+// const API_BASE_URL = 'http://backend:8000'; 
+const API_BASE_URL = 'https://api.render.com/deploy/srv-d4tnmq6uk2gs73c2uc60?key=5zjy7qv0ZwE'; 
+
 let lastUpdateTime = null;
 let ganttZoomLevel = 'days'; // 'days' | 'weeks' | 'months'
 
