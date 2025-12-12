@@ -1,4 +1,4 @@
-# main.py - BACKEND COMPLETO Y CORREGIDO PARA DASHBOARD TESINA
+# main.py - BACKEND COMPLETO Y CORREGIDO PARA DASHBOARD TESINA (AJUSTES DE INGESTA)
 
 import os
 import json
@@ -49,8 +49,8 @@ try:
     client = MongoClient(
         MONGO_ATLAS_URI,
         serverSelectionTimeoutMS=10000,  # 10 segundos para seleccionar servidor
-        connectTimeoutMS=10000,          # 10 segundos para conectar
-        socketTimeoutMS=30000,           # 30 segundos para operaciones
+        connectTimeoutMS=10000,         # 10 segundos para conectar
+        socketTimeoutMS=30000,          # 30 segundos para operaciones
         retryWrites=True,
         w="majority"
     )
@@ -156,9 +156,10 @@ async def ingest_csv_data(file: UploadFile = File(...)):
         logger.info(f"Archivo CSV cargado: {file.filename}, {len(df)} filas, {len(df.columns)} columnas")
         
         # Limpieza y estandarización de encabezados
+        # (Se mantiene la línea para estandarizar a minúsculas y sin espacios)
         df.columns = df.columns.str.strip().str.replace(' ', '_').str.lower()
         
-        # Renombrar columnas clave
+        # Renombrar columnas clave (AJUSTE AQUÍ: se añaden más nombres comunes)
         column_mapping = {
             'task_id': 'id',
             'project_name': 'project',
@@ -173,11 +174,14 @@ async def ingest_csv_data(file: UploadFile = File(...)):
             'user': 'user',
             'assigned': 'user',
             'estimated_effort_hrs': 'effort_hrs',
+            # -- MAPEOS CORREGIDOS/AMPLIADOS PARA EL CAMPO TEXT --
             'description': 'text',
             'name': 'text',
             'title': 'text',
             'task_name': 'text',
             'task': 'text',
+            'nombre': 'text',  # <--- AÑADIDO
+            'tarea': 'text',   # <--- AÑADIDO
             'duration': 'duration'
         }
         
@@ -186,8 +190,12 @@ async def ingest_csv_data(file: UploadFile = File(...)):
                 df.rename(columns={old_col: new_col}, inplace=True)
         
         # Verificar columnas requeridas
+        # Si la columna 'text' ya está mapeada o existía, no debería faltar aquí.
         required_cols = ['text', 'status', 'start', 'end']
         missing_cols = [col for col in required_cols if col not in df.columns]
+        
+        # CORRECCIÓN DE LA LÓGICA DE ERROR:
+        # Esto lanzará el error 400 si falta alguna de las 4 columnas (text, status, start, end).
         if missing_cols:
             raise HTTPException(
                 status_code=400,
@@ -939,22 +947,3 @@ async def test_endpoint():
         "database": DB_NAME if db_connected else "No conectado",
         "status": "OK"
     }
-
-# =======================================================
-# EJECUCIÓN PRINCIPAL
-# =======================================================
-if __name__ == "__main__":
-    import uvicorn
-    
-    # Obtener puerto de variable de entorno (Render usa PORT)
-    port = int(os.getenv("PORT", 8000))
-    
-    logger.info(f"🚀 Iniciando Dashboard Tesina API en puerto {port}")
-    logger.info(f"📊 Base de datos: {DB_NAME}")
-    
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=port,
-        log_level="info"
-    )
