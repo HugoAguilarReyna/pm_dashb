@@ -1,4 +1,4 @@
-# main.py - BACKEND COMPLETO Y CORREGIDO PARA DASHBOARD TESINA (AJUSTES DE INGESTA)
+# main.py - BACKEND COMPLETO Y CORREGIDO PARA DASHBOARD TESINA (AJUSTES DE CARGA DE TRABAJO)
 
 import os
 import json
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Dashboard Tesina API",
     description="API para el dashboard de gestión de proyectos",
-    version="2.1.0" # Version actualizada
+    version="2.1.1" # Version actualizada con corrección de carga de trabajo
 )
 
 # --- Configuración CORS ---
@@ -34,7 +34,7 @@ app.add_middleware(
 )
 
 # =======================================================
-# CONEXIÓN MONGODB ATLAS - CONFIGURACIÓN CORREGIDA
+# CONEXIÓN MONGODB ATLAS
 # =======================================================
 # Tu URI de MongoDB Atlas
 MONGO_ATLAS_URI = "mongodb+srv://aguilarhugo55_db_user:c5mfG11QT68ib4my@clusteract1.kpdhd5e.mongodb.net/?appName=ClusterAct1"
@@ -49,8 +49,8 @@ try:
     client = MongoClient(
         MONGO_ATLAS_URI,
         serverSelectionTimeoutMS=10000,  # 10 segundos para seleccionar servidor
-        connectTimeoutMS=10000,         # 10 segundos para conectar
-        socketTimeoutMS=30000,          # 30 segundos para operaciones
+        connectTimeoutMS=10000,          # 10 segundos para conectar
+        socketTimeoutMS=30000,           # 30 segundos para operaciones
         retryWrites=True,
         w="majority"
     )
@@ -166,7 +166,6 @@ async def ingest_csv_data(file: UploadFile = File(...)):
         csv_file = io.StringIO(csv_data)
         
         # Intentar leer con inferencia de delimitador (sep=None, engine='python')
-        # Esto soluciona problemas de Tabulación (TSV) y Punto y Coma (;)
         try:
             df = pd.read_csv(csv_file, sep=None, engine='python')
         except:
@@ -182,26 +181,27 @@ async def ingest_csv_data(file: UploadFile = File(...)):
         # Renombrar columnas clave (MAPEO COMPLETO Y CORREGIDO)
         column_mapping = {
             'task_id': 'id',
-            'ask_id': 'id', # Nuevo: Agregado para tu insumo
+            'ask_id': 'id',
             'project_name': 'project',
             'project': 'project',
-            'project_id': 'project', # Nuevo: Agregado para tu insumo
+            'project_id': 'project',
             'status': 'status',
             'due_date': 'end',
             'due': 'end',
             'start_date': 'start',
             'start': 'start',
             'assigned_to': 'user',
-            'assigned_user_id': 'user', # Nuevo: Agregado para tu insumo
+            'assigned_user_id': 'user',
             'user': 'user',
             'assigned': 'user',
-            'effort_points': 'effort_points', # Nuevo: Mantenemos el campo
+            'effort_points': 'effort_points',
             'estimated_effort_hrs': 'effort_hrs',
-            'actual_completion_date': 'actual_completion_date', # Nuevo: Mantenemos el campo
-            'is_milestone': 'is_milestone', # Nuevo: Mantenemos el campo
-            # -- MAPEOS CORREGIDOS/AMPLIADOS PARA EL CAMPO TEXT (El que te faltaba) --
+            'actual_completion_date': 'actual_completion_date',
+            'is_milestone': 'is_milestone',
+            'user_role': 'user_role', # <--- Mantenemos el rol para usarlo como display
+            # -- MAPEOS CORREGIDOS/AMPLIADOS PARA EL CAMPO TEXT --
             'description': 'text',
-            'task_description': 'text', # <--- ¡ESTE ERA EL FALTANTE CRÍTICO!
+            'task_description': 'text',
             'name': 'text',
             'title': 'text',
             'task_name': 'text',
@@ -215,7 +215,7 @@ async def ingest_csv_data(file: UploadFile = File(...)):
             if old_col in df.columns:
                 df.rename(columns={old_col: new_col}, inplace=True)
         
-        # Verificar columnas requeridas (Ahora debe pasar si 'task_description' existe)
+        # Verificar columnas requeridas
         required_cols = ['text', 'status', 'start', 'end']
         missing_cols = [col for col in required_cols if col not in df.columns]
         
@@ -234,6 +234,9 @@ async def ingest_csv_data(file: UploadFile = File(...)):
         
         if 'user' not in df.columns or df['user'].isnull().all():
             df['user'] = 'N/A'
+        
+        if 'user_role' not in df.columns or df['user_role'].isnull().all():
+            df['user_role'] = 'Sin Rol'
         
         # Procesar fechas
         df['start'] = df['start'].apply(safe_date_parse)
@@ -313,9 +316,8 @@ async def ingest_tasks(file: UploadFile = File(...)):
     return await ingest_csv_data(file)
 
 # =======================================================
-# ... EL RESTO DE TUS ENDPOINTS PERMANECE INALTERADO ...
+# ENDPOINTS DE TAREAS BÁSICAS
 # =======================================================
-
 @app.get("/api/tasks/all")
 async def get_all_tasks():
     """Obtiene todas las tareas."""
@@ -334,7 +336,6 @@ async def get_all_tasks():
 @app.get("/api/tasks/overdue")
 async def get_overdue_tasks():
     """Obtiene tareas vencidas no completadas."""
-    # ... (El código de get_overdue_tasks es el mismo) ...
     if not is_db_available():
         # Modo demo si no hay DB
         return parse_json([
@@ -384,7 +385,6 @@ async def get_overdue_tasks():
 @app.get("/api/tasks/upcoming")
 async def get_upcoming_tasks(days: Optional[int] = Query(30, ge=1)):
     """Obtiene tareas próximas a vencer."""
-    # ... (El código de get_upcoming_tasks es el mismo) ...
     if not is_db_available():
         return parse_json([])
     
@@ -408,7 +408,6 @@ async def get_upcoming_tasks(days: Optional[int] = Query(30, ge=1)):
 @app.get("/api/tasks/daily")
 async def get_daily_tasks():
     """Obtiene tareas para el día actual."""
-    # ... (El código de get_daily_tasks es el mismo) ...
     if not is_db_available():
         return parse_json([])
     
@@ -439,7 +438,6 @@ async def get_gantt_data(
     project: Optional[str] = Query(None)
 ):
     """Obtiene datos para el diagrama de Gantt."""
-    # ... (El código de get_gantt_data es el mismo) ...
     if not is_db_available():
         # Modo demo con datos de ejemplo
         return {
@@ -549,7 +547,6 @@ async def get_gantt_data(
 @app.get("/api/project/status")
 async def get_project_status():
     """Obtiene el estado de todos los proyectos."""
-    # ... (El código de get_project_status es el mismo) ...
     if not is_db_available():
         # Modo demo
         return {
@@ -679,7 +676,6 @@ async def get_project_status():
 @app.get("/api/metrics")
 async def get_metrics():
     """Obtiene métricas generales del dashboard."""
-    # ... (El código de get_metrics es el mismo) ...
     if not is_db_available():
         # Modo demo
         return {
@@ -738,18 +734,17 @@ async def get_metrics_summary():
     return await get_metrics()
 
 # =======================================================
-# ENDPOINT CARGA DE TRABAJO
+# ENDPOINT CARGA DE TRABAJO - CORREGIDO
 # =======================================================
 @app.get("/api/tasks/workload")
 async def get_workload_data():
     """Obtiene datos para el gráfico de carga de trabajo."""
-    # ... (El código de get_workload_data es el mismo) ...
     if not is_db_available():
         # Modo demo
         return parse_json([
             {
                 "raw_user_id": "USER_1",
-                "display_user_id": "Usuario 1",
+                "display_user_id": "Usuario Demo 1",
                 "total_tasks": 8,
                 "TO_DO": 3,
                 "IN_PROGRESS": 4,
@@ -757,28 +752,20 @@ async def get_workload_data():
                 "completed_tasks": 5,
                 "completion_rate": 62.5,
                 "overdue_tasks": 2
-            },
-            {
-                "raw_user_id": "USER_2",
-                "display_user_id": "Usuario 2",
-                "total_tasks": 6,
-                "TO_DO": 2,
-                "IN_PROGRESS": 3,
-                "BLOCKED": 1,
-                "completed_tasks": 3,
-                "completion_rate": 50.0,
-                "overdue_tasks": 1
             }
         ])
     
     try:
-        # Agrupar por usuario y estado
+        collection = db["tasks"]
+        
+        # 1. Agrupar por usuario (user) para obtener conteos
         pipeline = [
             {
                 "$match": {
                     "user": {"$exists": True, "$ne": None}
                 }
             },
+            # 2. Agrupar por user y status
             {
                 "$group": {
                     "_id": {
@@ -788,6 +775,7 @@ async def get_workload_data():
                     "count": {"$sum": 1}
                 }
             },
+            # 3. Re-agrupar por user para consolidar
             {
                 "$group": {
                     "_id": "$_id.user",
@@ -800,17 +788,32 @@ async def get_workload_data():
                     "total_tasks": {"$sum": "$count"}
                 }
             },
+            # 4. Traer el user_role (o el primer user_role que coincida con el user_id)
+            {
+                "$lookup": {
+                    "from": "tasks",
+                    "localField": "_id",
+                    "foreignField": "user",
+                    "as": "user_info"
+                }
+            },
+            {
+                "$addFields": {
+                    "display_role": {"$arrayElemAt": ["$user_info.user_role", 0]}
+                }
+            },
             {
                 "$project": {
                     "user": "$_id",
                     "statuses": 1,
-                    "total_tasks": 1
+                    "total_tasks": 1,
+                    "display_role": 1
                 }
             },
             {"$sort": {"total_tasks": -1}}
         ]
         
-        results = list(db["tasks"].aggregate(pipeline))
+        results = list(collection.aggregate(pipeline))
         
         # Formatear resultados
         formatted_results = []
@@ -818,7 +821,17 @@ async def get_workload_data():
         
         for result in results:
             user = result["user"] or "N/A"
-            user_display = "Sin Asignar" if user == "N/A" else f"Usuario {user}" if user.isdigit() else user
+            display_role = result.get("display_role", "")
+
+            # --- CORRECCIÓN CLAVE: Lógica de Display de Usuario ---
+            # Prioriza el rol si existe y es diferente al ID de usuario, si no, usa el ID.
+            if display_role and str(display_role).strip().lower() not in ["n/a", "none", user.lower()]:
+                 user_display = display_role
+            elif user == "N/A":
+                 user_display = "Sin Asignar"
+            else:
+                 user_display = user # Mostrar USR-001, USR-002, etc.
+            # -----------------------------------------------------
             
             # Extraer conteos por estado
             status_counts = {
@@ -840,7 +853,7 @@ async def get_workload_data():
                 "end": {"$lt": now},
                 "status": {"$nin": ["COMPLETED", "CANCELLED"]}
             }
-            overdue_tasks = db["tasks"].count_documents(overdue_query)
+            overdue_tasks = collection.count_documents(overdue_query)
             
             # Calcular tasa de finalización
             total = result["total_tasks"]
@@ -863,6 +876,7 @@ async def get_workload_data():
         
     except Exception as e:
         logger.error(f"Error en get_workload_data: {e}")
+        # En caso de error, devuelve una lista vacía en lugar de un error 500 para no romper el dashboard
         return parse_json([])
 
 # =======================================================
@@ -871,7 +885,6 @@ async def get_workload_data():
 @app.get("/api/efficiency/scoreboard")
 async def get_efficiency_scoreboard():
     """Obtiene el scoreboard de eficiencia por usuario."""
-    # ... (El código de get_efficiency_scoreboard es el mismo) ...
     try:
         # Usar datos de workload
         workload_data = await get_workload_data()
@@ -895,77 +908,23 @@ async def get_efficiency_scoreboard():
 # =======================================================
 @app.get("/health")
 async def health_check():
-    """Endpoint de salud del sistema."""
-    # ... (El código de health_check es el mismo) ...
-    try:
-        db_status = "disconnected"
-        task_count = 0
-        
-        if client is not None and db is not None:
-            try:
-                client.admin.command('ping')
-                db_status = "connected"
-                task_count = db["tasks"].count_documents({})
-            except:
-                db_status = "disconnected"
-        
-        return {
-            "status": "healthy",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "database": db_status,
-            "tasks_in_db": task_count,
-            "service": "dashboard-api",
-            "version": "2.1.0"
-        }
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "error": str(e),
-            "service": "dashboard-api"
-        }
-
-@app.get("/favicon.ico")
-async def favicon():
-    """Evita errores 404 para favicon."""
-    raise HTTPException(status_code=404, detail="No favicon configured")
-
-@app.get("/")
-async def root():
-    """Página de inicio de la API."""
-    # ... (El código de root es el mismo) ...
-    endpoints = {
-        "tasks": [
-            "/api/tasks/all - Todas las tareas",
-            "/api/tasks/overdue - Tareas vencidas",
-            "/api/tasks/upcoming - Tareas próximas",
-            "/api/tasks/daily - Tareas de hoy",
-            "/api/tasks/gantt - Datos para Gantt",
-            "/api/tasks/workload - Carga de trabajo"
-        ],
-        "metrics": [
-            "/api/metrics - Métricas generales",
-            "/api/project/status - Estado por proyecto",
-            "/api/efficiency/scoreboard - Scoreboard"
-        ],
-        "ingestion": [
-            "/api/ingest-csv - Subir CSV",
-            "/api/ingest/tasks - Subir tareas (alternativo)"
-        ],
-        "system": [
-            "/health - Salud del sistema",
-            "/docs - Documentación Swagger"
-        ]
-    }
+    """Endpoint de salud del servidor."""
+    status = "OK"
+    db_status = "Connected"
     
-    # CORREGIDO: Usar is_db_available() en lugar de evaluar directamente db
-    db_connected = is_db_available()
+    if not is_db_available():
+        status = "WARNING"
+        db_status = "Disconnected"
     
     return {
-        "message": "🚀 Dashboard Tesina API - Funcionando",
-        "version": "2.1.0",
-        "status": "operational",
-        "db_connected": db_connected,
-        "endpoints": endpoints,
-        "note": "La versión 2.1.0 incluye correcciones de ingesta para codificación y mapeo de columnas (ask_id, task_description, project_id, assigned_user_id)."
+        "status": status,
+        "db_status": db_status,
+        "timestamp": datetime.now().isoformat()
     }
+
+# =======================================================
+# RUNNER DE PRUEBA
+# =======================================================
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
