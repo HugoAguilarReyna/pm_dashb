@@ -1,5 +1,3 @@
-# main.py - BACKEND COMPLETO Y CORREGIDO PARA DASHBOARD TESINA (AJUSTES DE CARGA DE TRABAJO)
-
 import os
 import json
 from fastapi import FastAPI, Query, File, UploadFile, HTTPException
@@ -19,15 +17,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Dashboard Tesina API", # <<--- CORRECCIÓN AQUÍ (U+00A0 ELIMINADO)
+    title="Dashboard Tesina API",
     description="API para el dashboard de gestión de proyectos",
-    version="2.1.1" # Version actualizada con corrección de carga de trabajo
+    version="2.1.2" # Versión actualizada con endpoint de limpieza
 )
 
 # --- Configuración CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permitir todos los orígenes
+    allow_origins=["*"], # Permitir todos los orígenes
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,9 +46,9 @@ try:
     # CONEXIÓN DIRECTA CON TIMEOUTS AJUSTADOS
     client = MongoClient(
         MONGO_ATLAS_URI,
-        serverSelectionTimeoutMS=10000,  # 10 segundos para seleccionar servidor
-        connectTimeoutMS=10000,          # 10 segundos para conectar
-        socketTimeoutMS=30000,           # 30 segundos para operaciones
+        serverSelectionTimeoutMS=10000, # 10 segundos para seleccionar servidor
+        connectTimeoutMS=10000, # 10 segundos para conectar
+        socketTimeoutMS=30000, # 30 segundos para operaciones
         retryWrites=True,
         w="majority"
     )
@@ -315,6 +313,35 @@ async def ingest_tasks(file: UploadFile = File(...)):
     """Endpoint alternativo para compatibilidad con frontend."""
     return await ingest_csv_data(file)
 
+
+# =======================================================
+# ENDPOINT DE ADMINISTRACIÓN (LIMPIZA)
+# =======================================================
+@app.delete("/api/admin/clean-tasks")
+async def clean_tasks_collection():
+    """
+    ELIMINA TODOS LOS DOCUMENTOS DE LA COLECCIÓN 'tasks'.
+    ¡Usar con precaución! Se recomienda usarlo antes de una nueva ingestión.
+    """
+    if not is_db_available():
+        raise HTTPException(status_code=503, detail="Servicio de base de datos no disponible.")
+    
+    try:
+        collection = db["tasks"]
+        # Borrar todos los documentos en la colección 'tasks'
+        result = collection.delete_many({})
+        logger.warning(f"🚨 COLECCIÓN 'tasks' LIMPIADA. Documentos eliminados: {result.deleted_count}")
+        
+        return {
+            "status": "success",
+            "message": f"Colección 'tasks' limpiada exitosamente. Total de {result.deleted_count} documentos eliminados.",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error en clean_tasks_collection: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al limpiar la colección: {str(e)}")
+
+
 # =======================================================
 # ENDPOINTS DE TAREAS BÁSICAS
 # =======================================================
@@ -522,7 +549,7 @@ async def get_gantt_data(
             users.append("N/A")
         
         return {
-            "data": gantt_tasks,
+            "data": parse_json(gantt_tasks),
             "filters": {
                 "projects": projects or ["Proyecto 1", "Proyecto 2"],
                 "users": users or ["USER_1", "USER_2", "N/A"],
@@ -710,7 +737,7 @@ async def get_metrics():
             "total_tasks": total_tasks,
             "completed_tasks": completed_tasks,
             "completion_rate": round((completed_tasks / total_tasks * 100) if total_tasks > 0 else 0, 1),
-            "avg_completion_time": 7.5,  # Valor fijo por ahora
+            "avg_completion_time": 7.5, # Valor fijo por ahora
             "overdue_tasks": overdue_tasks,
             "active_tasks": active_tasks,
             "demo_mode": False
@@ -822,7 +849,7 @@ async def get_workload_data():
             user = result["user"] or "N/A"
             display_role = result.get("display_role", "")
 
-            # --- CORRECCIÓN CLAVE: Lógica de Display de Usuario ---
+            # --- Lógica de Display de Usuario ---
             # Prioriza el rol si existe y es diferente al ID de usuario, si no, usa el ID.
             if display_role and str(display_role).strip().lower() not in ["n/a", "none", user.lower()]:
                 user_display = display_role
@@ -830,7 +857,7 @@ async def get_workload_data():
                 user_display = "Sin Asignar"
             else:
                 user_display = user # Mostrar USR-001, USR-002, etc.
-            # -----------------------------------------------------
+            # ------------------------------------
             
             # Extraer conteos por estado
             status_counts = {
@@ -898,9 +925,4 @@ async def get_efficiency_scoreboard():
             
             return parse_json(workload_data)
         else:
-            return parse_json([])
-        
-    except Exception as e:
-        logger.error(f"Error en get_efficiency_scoreboard: {e}")
-        # Aseguramos un retorno válido en caso de excepción
-        return parse_json([])
+            return parse_json([]) # Fin de la función
