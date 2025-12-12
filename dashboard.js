@@ -1,4 +1,4 @@
-// dashboard.js - VERSIÓN FINAL CORREGIDA Y FUNCIONAL
+// dashboard.js - VERSIÓN CORREGIDA Y FUNCIONAL COMPLETA
 
 // Configuración global
 const API_BASE_URL = 'https://pm-dashb-7.onrender.com';
@@ -14,6 +14,47 @@ const statusColors = {
   'COMPLETED': '#27E568', // Verde oscuro (Éxito)
   'CANCELLED': '#0B0D0C'  // Gris (Neutro)
 };
+
+// Helpers robustos para el Donut/Pie Chart - VERSIÓN CORREGIDA
+const getPieStatus = (d) => {
+  const status = String(d.data._id || d.data.status || d.data.name || 'TO_DO').toUpperCase();
+  return status.includes('TO_DO') ? 'TO_DO' :
+         status.includes('IN_PROGRESS') ? 'IN_PROGRESS' :
+         status.includes('COMPLETED') ? 'COMPLETED' :
+         status.includes('BLOCKED') ? 'BLOCKED' :
+         status.includes('CANCELLED') ? 'CANCELLED' : 'TO_DO';
+};
+
+const getPieLabel = (d) => {
+  const label = String(d.data._id || d.data.status || d.data.name || 'Indefinido');
+  return label
+    .replace('_', ' ')
+    .replace('TO_DO', 'Por Hacer')
+    .replace('IN_PROGRESS', 'En Progreso')
+    .replace('COMPLETED', 'Completado')
+    .replace('BLOCKED', 'Bloqueado')
+    .replace('CANCELLED', 'Cancelado');
+};
+
+// Función helper mejorada para obtener color
+function getColorForStatus(status) {
+  const statusUpper = String(status || '').toUpperCase();
+  return statusColors[statusUpper] || 
+         statusColors[statusUpper.replace(' ', '_')] || 
+         '#cccccc';
+}
+
+// Función helper mejorada para etiqueta
+function getLabelForStatus(status) {
+  const statusStr = String(status || 'Indefinido');
+  return statusStr
+    .replace('_', ' ')
+    .replace('TO_DO', 'Por Hacer')
+    .replace('IN_PROGRESS', 'En Progreso')
+    .replace('COMPLETED', 'Completado')
+    .replace('BLOCKED', 'Bloqueado')
+    .replace('CANCELLED', 'Cancelado');
+}
 
 // --- FUNCIÓN GLOBAL DE ZOOM ---
 function zoomGantt(level) {
@@ -53,10 +94,6 @@ function parseDateFlexible(dateString) {
 
 // Helper robusto para obtener el estado de una tarea (uso en Workload, Overdue, Gantt)
 const getTaskStatus = (task) => String(task.status || task._id || 'TO_DO').toUpperCase();
-
-// Helpers robustos para el Donut/Pie Chart
-const getPieStatus = (d) => String(d.data._id || d.data.status || d.data.name || 'TO_DO').toUpperCase();
-const getPieLabel = (d) => String(d.data._id || d.data.status || d.data.name || 'Indefinido').replace('_', ' ');
 
 // =======================================================
 // 1. CARGA Y SOBREESCRITURA DE CSV
@@ -104,23 +141,59 @@ async function handleIngestCsv() {
 }
 
 // =======================================================
-// 2. ESTADO DEL PROYECTO (Donut Chart) - INTERACTIVO - CORREGIDO
+// 2. ESTADO DEL PROYECTO (Donut Chart) - VERSIÓN CORREGIDA
 // =======================================================
 async function renderProjectStatus() {
   try {
     const response = await fetch(`${API_BASE_URL}/api/project/status`);
-    const data = await response.json();
+    const responseData = await response.json();
+    
+    const data = responseData.projects || [];
 
     const container = d3.select('#project-status-chart');
     container.html('');
 
     if (!Array.isArray(data) || data.length === 0) {
       container.append('div').attr('class', 'no-data-message')
-        .text('No hay datos de tareas para el estado del proyecto.');
+        .text('No hay datos de proyectos disponibles.');
       return;
     }
 
-    const totalTasks = data.reduce((sum, d) => sum + (Number(d.count) || 0), 0);
+    // Preparar datos para el gráfico de donut - VERSIÓN CORREGIDA
+    const pieData = [];
+    let totalTasks = 0;
+    
+    data.forEach(project => {
+      // Verificar que el proyecto tenga statuses y sea un array válido
+      if (project && project.statuses && Array.isArray(project.statuses)) {
+        project.statuses.forEach(statusItem => {
+          // Verificar que cada item de status tenga las propiedades necesarias
+          if (statusItem && typeof statusItem === 'object') {
+            const status = String(statusItem.status || '').toUpperCase();
+            const count = Number(statusItem.count || statusItem.value || 0);
+            
+            if (status && count > 0) {
+              pieData.push({
+                _id: `${project.project || project._id || 'Proyecto'} - ${status}`,
+                status: status,
+                count: count,
+                name: status.replace('_', ' '),
+                project: project.project || project._id || 'Proyecto'
+              });
+              
+              totalTasks += count;
+            }
+          }
+        });
+      }
+    });
+
+    if (pieData.length === 0) {
+      container.append('div').attr('class', 'no-data-message')
+        .text('No hay datos de estados para mostrar.');
+      return;
+    }
+
     const width = 450, height = 300, outerRadius = 120, innerRadius = outerRadius * 0.6;
 
     const svg = container.append('svg')
@@ -129,22 +202,25 @@ async function renderProjectStatus() {
       .append('g')
       .attr('transform', `translate(${outerRadius + 20}, ${height / 2})`);
 
-    const pie = d3.pie().value(d => d.count).sort(null);
-    const arc = d3.arc().innerRadius(innerRadius).outerRadius(outerRadius);
+    const pie = d3.pie()
+      .value(d => d.count)
+      .sort(null);
+
+    const arc = d3.arc()
+      .innerRadius(innerRadius)
+      .outerRadius(outerRadius);
 
     const arcs = svg.selectAll('.arc')
-      .data(pie(data))
+      .data(pie(pieData))
       .enter().append('g')
       .attr('class', 'arc');
 
     arcs.append('path')
       .attr('d', arc)
-      // CORRECCIÓN: Usamos getPieStatus
-      .attr('fill', d => statusColors[getPieStatus(d)] || '#cccccc')
+      .attr('fill', d => getColorForStatus(d.data.status))
       .style('cursor', 'pointer')
       .on('click', function (event, d) {
-        // CORRECCIÓN: Usamos getPieStatus
-        const status = getPieStatus(d);
+        const status = d.data.status;
         const filterElement = document.getElementById('status-filter');
         const userFilterElement = document.getElementById('user-filter'); 
 
@@ -160,10 +236,15 @@ async function renderProjectStatus() {
         }
       })
       .on('mouseover', function (event, d) {
+        const percentage = totalTasks > 0 ? (d.data.count / totalTasks * 100).toFixed(1) : 0;
         d3.select('#tooltip')
           .style('opacity', 1)
-          // CORRECCIÓN: Usamos getPieLabel
-          .html(`<strong>${getPieLabel(d)}</strong>: ${d.data.count} tareas (${d3.format(".1%")(d.data.count / Math.max(1, totalTasks))})`)
+          .html(`
+            <strong>${getLabelForStatus(d.data.status)}</strong><br>
+            Proyecto: ${d.data.project}<br>
+            Tareas: ${d.data.count}<br>
+            Porcentaje: ${percentage}%
+          `)
           .style('left', (event.pageX + 10) + 'px')
           .style('top', (event.pageY - 28) + 'px');
       })
@@ -171,18 +252,31 @@ async function renderProjectStatus() {
         d3.select('#tooltip').style('opacity', 0);
       });
 
+    // Solo mostrar texto si el segmento es lo suficientemente grande
     arcs.append('text')
       .attr('transform', d => `translate(${arc.centroid(d)})`)
       .attr('dy', '0.35em')
-      .text(d => d3.format(".1%")(d.data.count / Math.max(1, totalTasks)))
+      .text(d => {
+        const percentage = totalTasks > 0 ? (d.data.count / totalTasks * 100) : 0;
+        return percentage > 5 ? d3.format(".0%")(d.data.count / Math.max(1, totalTasks)) : '';
+      })
       .style('text-anchor', 'middle')
       .style('fill', 'white')
-      .style('font-size', '12px');
+      .style('font-size', '12px')
+      .style('font-weight', 'bold')
+      .style('pointer-events', 'none');
 
-    renderLegend(svg, data, totalTasks, outerRadius);
+    // Renderizar leyenda
+    renderLegend(svg, pieData, totalTasks, outerRadius);
+    
   } catch (error) {
-    console.error("Error al renderizar el estado del proyecto:", error);
-    d3.select('#project-status-chart').html(`<div class="error-message">Error cargando datos: ${error.message}</div>`);
+    console.error("❌ Error al renderizar el estado del proyecto:", error);
+    d3.select('#project-status-chart').html(`
+      <div class="error-message">
+        <i class="fas fa-exclamation-triangle"></i>
+        Error cargando datos: ${error.message}
+      </div>
+    `);
   }
 }
 
@@ -190,8 +284,21 @@ function renderLegend(svg, data, totalTasks, outerRadius) {
   const legendOffset = outerRadius + 50;
   const legendSpacing = 20;
 
-  // Hacemos el mapeo de datos más robusto para la leyenda
-  const legendData = data.map(d => ({ _id: d._id || d.status || d.name, count: d.count }));
+  // Agrupar por estado para la leyenda (ignorando proyecto)
+  const statusCounts = {};
+  data.forEach(d => {
+    const status = d.status || d._id;
+    if (!statusCounts[status]) statusCounts[status] = 0;
+    statusCounts[status] += d.count;
+  });
+
+  const legendData = Object.keys(statusCounts).map(status => ({
+    _id: status,
+    count: statusCounts[status]
+  }));
+
+  // Ordenar por cantidad descendente
+  legendData.sort((a, b) => b.count - a.count);
 
   const legend = svg.selectAll(".legend")
     .data(legendData)
@@ -203,17 +310,21 @@ function renderLegend(svg, data, totalTasks, outerRadius) {
     .attr("x", 0)
     .attr("width", 10)
     .attr("height", 10)
-    .attr('fill', d => statusColors[String(d._id).toUpperCase()] || '#888888');
+    .attr('fill', d => getColorForStatus(d._id));
 
   legend.append("text")
     .attr("x", 15)
     .attr("y", 9)
     .attr("dy", ".35em")
     .style("text-anchor", "start")
-    .style("font-size", "12px")
-    .text(d => `${String(d._id || 'Indefinido').replace('_', ' ')} - ${((d.count / Math.max(1, totalTasks)) * 100).toFixed(1)}%`);
+    .style("font-size", "11px")
+    .style("font-weight", "bold")
+    .text(d => {
+      const label = getLabelForStatus(d._id);
+      const percentage = totalTasks > 0 ? ((d.count / totalTasks) * 100).toFixed(1) : 0;
+      return `${label} (${d.count} - ${percentage}%)`;
+    });
 }
-
 
 function renderWorkloadLegend(container) {
   const relevantStatuses = {
@@ -265,7 +376,6 @@ async function renderWorkloadChart() {
     const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
     const responseData = await response.json();
     
-    // CORRECCIÓN: Extraer array 'data' del objeto
     let data = responseData.data || [];
 
     const container = d3.select('#workload-chart');
@@ -466,7 +576,6 @@ async function calculateAndRenderEfficiencyScoreboard() {
         const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
         const responseData = await response.json();
         
-        // CORRECCIÓN: Extraer array 'data' del objeto
         const data = responseData.data || [];
         
         const container = d3.select('#efficiency-scoreboard');
@@ -618,7 +727,6 @@ async function renderDailyTasks() {
     const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
     const responseData = await response.json();
     
-    // CORRECCIÓN: Extraer array 'data' del objeto
     const data = responseData.data || [];
 
     const container = d3.select('#daily-tasks');
@@ -721,7 +829,6 @@ async function loadGanttFilters() {
         const response = await fetch(`${API_BASE_URL}/api/tasks/gantt`);
         const responseData = await response.json();
         
-        // CORRECCIÓN: Extraer array 'data' del objeto
         const tasks = responseData.data || [];
         
         const userIds = new Set();
@@ -776,7 +883,6 @@ async function renderGanttChart() {
     const response = await fetch(apiUrl);
     const responseData = await response.json();
     
-    // CORRECCIÓN: Extraer array 'data' del objeto
     const rawData = responseData.data || [];
 
     const container = d3.select('#gantt-chart');
